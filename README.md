@@ -204,6 +204,18 @@ streamlit run app.py
 
 ブラウザでStreamlitのURLを開くと、サンプルCSV、分析結果、グラフ、詳細分析、改善案レポートを確認できます。
 
+## Streamlit Community Cloudで公開する場合
+
+Streamlit Community Cloudのワークスペースで新規アプリを作成し、以下を指定します。
+
+- Repository: `kur11208/plamo-design-feedback-ai`
+- Branch: `main`
+- Main file path: `app.py`
+- App URL: `plamo-design-feedback-ai`（空いていない場合は任意の短い名前）
+- Secrets: 不要
+
+公式データや外部LLM APIは使っていないため、追加の環境変数なしで起動できます。
+
 ## テスト方法
 
 ```powershell
