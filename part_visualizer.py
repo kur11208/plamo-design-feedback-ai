@@ -111,7 +111,7 @@ RISK_COLORS = {
     "high":   "#E53E3E",
     "medium": "#F6AD55",
     "low":    "#48BB78",
-    "none":   "#4A5568",
+    "none":   "#718096",
 }
 
 _BG      = "#0E1117"
@@ -133,7 +133,7 @@ def plot_runner_inspection_map(
 ) -> go.Figure:
     """Runner sheet inspection map with mecha-style part shapes."""
 
-    summary = _summarize_by_part(records)
+    summary = _summarize_by_part(records, "runner_state")
     fig = go.Figure()
     _apply_base_layout(fig, "切り出し前リスクマップ",
                        "ゲート位置・小型部品・切り出し時の破損リスクを架空ランナー模式図上で可視化します。")
@@ -158,16 +158,18 @@ def plot_runner_inspection_map(
     for part_area, layout in RUNNER_PART_LAYOUT.items():
         info = summary.get(part_area, {})
         risk_score  = info.get("average_risk_score")
+        feedback_count = int(info.get("feedback_count", 0))
         issue_cats  = info.get("issue_categories", [])
         gate_pos    = info.get("gate_position", "hidden")
         is_hl       = highlight_part_area == part_area
+        has_feedback = risk_score is not None
         cx, cy      = _point(layout["center"])
         color       = _risk_color(risk_score)
-        score_text  = f"{risk_score:.0f}" if risk_score is not None else "n/a"
+        score_text  = f"{risk_score:.0f}" if has_feedback else "参考"
 
         if not bg_src:
             _draw_runner_part_shape(fig, part_area, cx, cy, color)
-        _draw_gate_markers(fig, layout["gate_points"], issue_cats, gate_pos)
+        _draw_gate_markers(fig, layout["gate_points"], issue_cats, gate_pos, active=has_feedback or is_hl)
 
         if is_hl:
             fig.add_shape(type="circle",
@@ -187,11 +189,17 @@ def plot_runner_inspection_map(
             marker=dict(size=44, color="rgba(0,0,0,0)", symbol="circle"),
             hovertemplate=(
                 f"<b>{layout['part_no']} {part_area}</b><br>"
-                f"risk: {score_text}<br>gate: {gate_pos}<br>"
+                f"risk: {score_text}<br>feedback: {feedback_count}<br>gate: {gate_pos}<br>"
                 f"categories: {', '.join(issue_cats) or '-'}<extra></extra>"
             ),
             showlegend=False,
         ))
+
+        if not has_feedback and not is_hl:
+            # The background image contains this part, but the current phase has
+            # no feedback for it. Keep it available in hover only so the map
+            # does not pretend to score an unobserved part.
+            continue
 
         # Arrow label
         ann = layout.get("ann", {"ax": 0, "ay": -62})
@@ -222,7 +230,7 @@ def plot_assembled_inspection_map(
 ) -> go.Figure:
     """Post-assembly inspection map with fictional mecha silhouette."""
 
-    summary = _summarize_by_part(records)
+    summary = _summarize_by_part(records, "assembled_state")
     fig = go.Figure()
     _apply_base_layout(fig, "組み立て後リスクマップ",
                        "関節の固さ・保持力不足・ポージング安定性を可視化します。")
@@ -259,11 +267,12 @@ def plot_assembled_inspection_map(
         layout     = ASSEMBLED_PART_LAYOUT[part_area]
         info       = summary.get(part_area, {})
         risk_score = info.get("average_risk_score")
+        feedback_count = int(info.get("feedback_count", 0))
         main_cat   = info.get("main_issue_category", "n/a")
         issue_cats = info.get("issue_categories", [])
         color      = _risk_color(risk_score)
         x, y       = float(layout["x"]), float(layout["y"])
-        shape      = "square" if layout.get("shape") == "rect" else "circle"
+        shape      = "square" if layout.get("shape") in {"rect", "square"} else "circle"
         is_hl      = highlight_part_area == part_area
         score_text = f"{risk_score:.0f}" if risk_score is not None else "n/a"
         msize      = 32 if (risk_score or 0) >= 70 else 24 if (risk_score or 0) >= 40 else 18
@@ -286,6 +295,7 @@ def plot_assembled_inspection_map(
                         line=dict(color="#E2E8F0", width=1.5), symbol=shape),
             hovertemplate=(
                 f"<b>{part_area}</b><br>risk: {score_text}<br>"
+                f"feedback: {feedback_count}<br>"
                 f"main: {main_cat}<br>"
                 f"categories: {', '.join(issue_cats) or '-'}<extra></extra>"
             ),
@@ -477,8 +487,27 @@ def _draw_runner_part_shape(fig: go.Figure, part_area: str,
         p(f"M {cx-0.38} {cy-0.38} L {cx+0.38} {cy-0.38} L {cx+0.38} {cy+0.38} L {cx-0.38} {cy+0.38} Z")
 
 
-def _draw_gate_markers(fig: go.Figure, gate_points: list,
-                       issue_cats: list, gate_pos: str) -> None:
+def _draw_gate_markers(
+    fig: go.Figure,
+    gate_points: list,
+    issue_cats: list,
+    gate_pos: str,
+    *,
+    active: bool = True,
+) -> None:
+    if not active:
+        for gx, gy in gate_points:
+            fig.add_shape(
+                type="circle",
+                x0=gx - 0.07,
+                y0=gy - 0.07,
+                x1=gx + 0.07,
+                y1=gy + 0.07,
+                fillcolor="rgba(113,128,150,0.45)",
+                line=dict(color="rgba(226,232,240,0.45)", width=0.8),
+            )
+        return
+
     risky = bool(set(issue_cats) & {"gate_mark", "breakage_risk", "small_parts"})
     gate_color = "#E53E3E" if (risky or gate_pos in {"front", "tip"}) else "#718096"
     for gx, gy in gate_points:
@@ -658,11 +687,17 @@ def _add_risk_legend(fig: go.Figure) -> None:
 # Data helpers
 # ---------------------------------------------------------------------------
 
-def _summarize_by_part(records: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+def _summarize_by_part(
+    records: Sequence[Mapping[str, Any]],
+    inspection_phase: str | None = None,
+) -> dict[str, dict[str, Any]]:
     scores     : dict[str, list[int]]       = defaultdict(list)
     categories : dict[str, Counter[str]]    = defaultdict(Counter)
     gates      : dict[str, Counter[str]]    = defaultdict(Counter)
     for record in records:
+        record_phase = record.get("inspection_phase")
+        if inspection_phase and record_phase and str(record_phase) != inspection_phase:
+            continue
         pa = str(record.get("part_area", "unknown"))
         scores[pa].append(int(record.get("risk_score", 0)))
         categories[pa].update(_as_list(record.get("issue_categories", [])))
@@ -674,6 +709,7 @@ def _summarize_by_part(records: Sequence[Mapping[str, Any]]) -> dict[str, dict[s
         main_gate  = gates[pa].most_common(1)
         summary[pa] = {
             "average_risk_score":   sum(sc) / len(sc),
+            "feedback_count":       len(sc),
             "main_issue_category":  main_issue[0][0] if main_issue else "n/a",
             "issue_categories":     list(categories[pa].keys()),
             "gate_position":        main_gate[0][0]  if main_gate  else "hidden",

@@ -105,15 +105,16 @@ def build_image_based_findings(
     for part_area, cue in cue_map.items():
         item = summary.get(part_area, {})
         risk_score = int(round(float(item.get("average_risk_score", 0))))
+        feedback_count = int(item.get("feedback_count", 0))
         findings.append(
             {
                 "inspection_phase": inspection_phase,
                 "part_area": part_area,
                 "visual_target": cue["visual_target"],
                 "risk_score": risk_score,
-                "risk_level": _risk_level(risk_score),
+                "risk_level": _risk_level(risk_score, feedback_count),
                 "main_issue_category": item.get("main_issue_category", "n/a"),
-                "feedback_count": item.get("feedback_count", 0),
+                "feedback_count": feedback_count,
                 "visual_cue": cue["visual_cue"],
                 "image_based_interpretation": cue["risk_interpretation"],
                 "recommended_action": cue["recommended_action"],
@@ -234,6 +235,8 @@ def _summarize_records(records: Sequence[Mapping[str, Any]], inspection_phase: s
 def _summary_text(item: Mapping[str, Any] | None) -> str:
     if not item:
         return "該当なし"
+    if int(item.get("feedback_count", 0)) == 0:
+        return "該当フィードバックなし"
     return f"{item['part_area']} / risk {item['risk_score']} / {item['main_issue_category']}"
 
 
@@ -247,7 +250,9 @@ def _markdown_table(rows: Sequence[Mapping[str, Any]], columns: Sequence[str]) -
     return "\n".join([header, separator, *body])
 
 
-def _risk_level(risk_score: int) -> str:
+def _risk_level(risk_score: int, feedback_count: int = 1) -> str:
+    if feedback_count <= 0:
+        return "No feedback"
     if risk_score >= 70:
         return "High"
     if risk_score >= 40:
