@@ -21,7 +21,14 @@ def _load_bg_image(filename: str) -> str | None:
     if not path.exists():
         return None
     data = base64.b64encode(path.read_bytes()).decode()
-    return f"data:image/webp;base64,{data}"
+    mime_types = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+    }
+    mime_type = mime_types.get(path.suffix.lower(), "image/png")
+    return f"data:{mime_type};base64,{data}"
 
 
 RUNNER_PARTS = ("antenna", "hand_parts", "weapon_grip", "backpack", "gate_area", "instruction_step")
@@ -51,44 +58,44 @@ PART_LABELS = {
 RUNNER_PART_LAYOUT = {
     "antenna": {
         "part_no": "A1",
-        "center": (2.51, 7.28),
-        "gate_points": [(2.33, 6.48), (3.04, 6.48)],
-        "ann": {"ax": -65, "ay": -42},
+        "center": (1.26, 6.86),
+        "gate_points": [(1.23, 7.62), (1.42, 5.98)],
+        "ann": {"ax": -55, "ay": -40},
     },
     "hand_parts": {
         "part_no": "A2",
-        "center": (2.70, 5.62),
-        "gate_points": [(1.97, 5.62), (2.69, 5.22)],
-        "ann": {"ax": -65, "ay": -42},
+        "center": (3.04, 6.85),
+        "gate_points": [(2.24, 6.70), (3.92, 6.66)],
+        "ann": {"ax": -60, "ay": -42},
     },
     "weapon_grip": {
-        "part_no": "B1",
-        "center": (6.42, 5.78),
-        "gate_points": [(5.45, 5.78), (6.96, 5.78)],
-        "ann": {"ax": 65, "ay": -42},
+        "part_no": "A3",
+        "center": (4.47, 6.91),
+        "gate_points": [(4.34, 6.08), (5.12, 6.98)],
+        "ann": {"ax": 58, "ay": -42},
     },
     "backpack": {
-        "part_no": "B3",
-        "center": (6.07, 7.35),
-        "gate_points": [(5.54, 6.98), (6.78, 6.98)],
+        "part_no": "B2",
+        "center": (8.70, 6.65),
+        "gate_points": [(8.17, 6.50), (9.25, 6.50)],
         "ann": {"ax": 65, "ay": -42},
     },
     "gate_area": {
-        "part_no": "A3",
-        "center": (2.51, 3.45),
-        "gate_points": [(1.80, 3.45), (2.87, 3.45)],
-        "ann": {"ax": -65, "ay": 42},
+        "part_no": "B3",
+        "center": (1.35, 3.95),
+        "gate_points": [(1.10, 3.95), (1.88, 4.38), (1.88, 3.56)],
+        "ann": {"ax": -60, "ay": 42},
     },
 }
 
 ASSEMBLED_PART_LAYOUT = {
-    "shoulder_joint": {"x": 3.70, "y": 6.74, "shape": "circle", "ann": {"ax": -80, "ay": -28}},
-    "elbow_joint":    {"x": 3.00, "y": 5.32, "shape": "circle", "ann": {"ax": -80, "ay": -22}},
-    "waist_joint":    {"x": 4.70, "y": 3.89, "shape": "square", "ann": {"ax": 0,   "ay": 62}},
-    "leg_joint":      {"x": 4.40, "y": 2.85, "shape": "circle", "ann": {"ax": -72, "ay": 42}},
-    "hand_parts":     {"x": 2.80, "y": 4.08, "shape": "circle", "ann": {"ax": -80, "ay": 32}},
-    "weapon_grip":    {"x": 3.20, "y": 3.89, "shape": "square", "ann": {"ax": -80, "ay": -22}},
-    "backpack":       {"x": 6.10, "y": 6.84, "shape": "square", "ann": {"ax": 78,  "ay": -32}},
+    "shoulder_joint": {"x": 3.85, "y": 6.56, "shape": "circle", "ann": {"ax": -86, "ay": -28}},
+    "elbow_joint":    {"x": 3.20, "y": 5.30, "shape": "circle", "ann": {"ax": -82, "ay": -22}},
+    "waist_joint":    {"x": 5.00, "y": 4.32, "shape": "square", "ann": {"ax": 0,   "ay": 62}},
+    "leg_joint":      {"x": 4.35, "y": 2.58, "shape": "circle", "ann": {"ax": -76, "ay": 42}},
+    "hand_parts":     {"x": 3.10, "y": 3.83, "shape": "circle", "ann": {"ax": -86, "ay": 32}},
+    "weapon_grip":    {"x": 3.45, "y": 3.78, "shape": "square", "ann": {"ax": -82, "ay": -22}},
+    "backpack":       {"x": 6.18, "y": 6.18, "shape": "square", "ann": {"ax": 82,  "ay": -32}},
 }
 
 ASSEMBLED_CONNECTIONS = [
@@ -131,15 +138,15 @@ def plot_runner_inspection_map(
     _apply_base_layout(fig, "切り出し前リスクマップ",
                        "ゲート位置・小型部品・切り出し時の破損リスクを架空ランナー模式図上で可視化します。")
 
-    bg_src = _load_bg_image("runner_bg.webp")
+    bg_src = _load_bg_image("runner_bg_realistic.png")
     if bg_src:
         fig.add_layout_image(
             source=bg_src,
             xref="x", yref="y",
-            x=0.55, y=8.55,
-            sizex=8.90, sizey=7.50,
+            x=0.30, y=8.10,
+            sizex=9.40, sizey=5.30,
             xanchor="left", yanchor="top",
-            opacity=0.40,
+            opacity=0.82,
             layer="below",
             sizing="stretch",
         )
@@ -220,7 +227,7 @@ def plot_assembled_inspection_map(
     _apply_base_layout(fig, "組み立て後リスクマップ",
                        "関節の固さ・保持力不足・ポージング安定性を可視化します。")
 
-    bg_src = _load_bg_image("assembled_bg.webp")
+    bg_src = _load_bg_image("assembled_bg_original.png")
     if bg_src:
         fig.add_layout_image(
             source=bg_src,
@@ -228,7 +235,7 @@ def plot_assembled_inspection_map(
             x=0.0, y=9.5,
             sizex=10.0, sizey=9.5,
             xanchor="left", yanchor="top",
-            opacity=0.30,
+            opacity=0.42,
             layer="below",
             sizing="stretch",
         )

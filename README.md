@@ -2,9 +2,19 @@
 
 このアプリは、プラモデルのユーザーフィードバックと架空の部品特徴データを組み合わせ、壊れやすい部位・組み立てづらい工程・改善優先度を可視化する開発改善支援プロトタイプです。
 
-プラモデルの組み立て後レビューやフィードバック文を分析し、問題カテゴリ、対象部位、リスクスコア、原因候補、改善案を表示するStreamlit製の小規模プロトタイプです。
+プラモデルの組み立て後レビューやランナー状態のフィードバック文を分析し、問題カテゴリ、対象部位、リスクスコア、原因候補、具体的な変更案、検証方法を表示するStreamlit製の小規模プロトタイプです。
 
-本プロジェクトは、公式データは使用していない学習用プロトタイプです。
+> Status: Portfolio MVP
+>
+> 本プロジェクトは、公式データは使用していない学習用プロトタイプです。実在する企業・商品・キャラクター・公式画像・公式デザイン・実際の金型データは使用していません。
+
+## このポートフォリオで示すこと
+
+- 単なる感情分析ではなく、ユーザーの声と部品特徴を結びつけて改善優先度を出すこと
+- ランナー状態と組み立て後状態を分け、ゲート位置、細い部品、関節の固さ、保持力不足を別々に評価すること
+- ルールベースで説明可能なMVPを作り、後からLLM、CADデータ、試作レビュー、不具合報告へ拡張できる構成にすること
+- AIを玩具そのものに入れるだけでなく、商品開発、品質改善、説明書改善の支援に使う発想
+- 架空データと自作生成画像だけでデモを成立させ、著作権、商標、機密情報に配慮すること
 
 ## サンプル画面
 
@@ -17,6 +27,12 @@
 | ランナー検査ビュー | 完成後検査ビュー |
 | --- | --- |
 | ![Runner sample](assets/runner_sample.png) | ![Assembled sample](assets/assembled_sample.png) |
+
+| 部品改善カルテ | ローカルAI補強分析 |
+| --- | --- |
+| ![Detail carte](docs/screenshots/detail_carte.png) | ![Local LLM panel](docs/screenshots/local_llm_panel.png) |
+
+> 現在の画像はデモ説明用の仮素材です。今後、権利処理済みのランナー写真や試作サンプル写真を用意できる場合は差し替えます。用意が難しい場合は、実物写真に寄せず、アプリ内で生成した模式図や検査点マップを正式な説明用ビジュアルとして扱います。
 
 ## プロジェクト概要
 
@@ -60,11 +76,40 @@
 
 ## AI活用の意図
 
-現時点では外部LLM APIを使わず、キーワードベースとルールベースで分類しています。これは、最初から大きなAIシステムを作るのではなく、入力、分類、スコアリング、改善案生成、レポート化という一連の流れをローカルで検証できるようにするためです。ルールベース分類には限界があるため、否定表現の一部を抑制しつつ、将来的にはLLMで分類候補や原因候補を補強する設計を想定しています。
+基本の分析は外部LLM APIを使わず、キーワードベースとルールベースで分類しています。これは、最初から大きなAIシステムを作るのではなく、入力、分類、スコアリング、改善案生成、レポート化という一連の流れをローカルで検証できるようにするためです。ルールベース分類には限界があるため、否定表現の一部を抑制しつつ、将来的にはLLMで分類候補や原因候補を補強する設計を想定しています。
 
 将来的にLLMを組み込む場合も、現在の関数インターフェースを保つことで、UIやレポート生成部分を大きく変えずに分類器だけを置き換えられます。
 
 このプロトタイプが扱うAI活用は、玩具本体にAI機能を入れる方向ではなく、商品開発プロセスを支援する方向です。ユーザーの声、部品特徴、試作レビュー、不具合報告を結びつけることで、設計・品質・説明書改善の意思決定を補助することを想定しています。
+
+## Local LLM / Ollama 補強分析
+
+詳細分析画面では、任意でローカルLLMによる補強分析を実行できます。外部APIへデータを送らず、ローカル環境のOllamaに対して、原因説明、追加の改善仮説、検証観点だけを生成させる設計です。
+
+重要な方針:
+
+- `risk_score` はルールベースのまま固定し、LLMには再採点させません。
+- LLMは説明文、改善案、検証方法の補強に限定します。
+- Ollamaが起動していない環境でも、通常のCSV分析、リスクマップ、レポート生成は動きます。
+- 実在商品名、公式データ、実際の金型データはプロンプトに含めない前提です。
+
+PowerShell例:
+
+```powershell
+ollama serve
+ollama pull llama3.2:3b
+streamlit run app.py
+```
+
+必要に応じて環境変数でモデルやエンドポイントを変えられます。
+
+```powershell
+$env:LOCAL_LLM_ENDPOINT="http://localhost:11434/api/generate"
+$env:LOCAL_LLM_MODEL="llama3.2:3b"
+$env:LOCAL_LLM_TIMEOUT="60"
+```
+
+この機能は、AIを玩具そのものに入れるのではなく、機密を外部へ出さずに商品開発・品質改善レビューを支援するための拡張です。
 
 ## ユーザー体験改善への応用
 
@@ -104,6 +149,7 @@
 - 完成後の関節・接続部検査図による保持力・可動リスクマップ
 - 選択フィードバックの対象部位、ゲート位置、具体的な変更案の可視化
 - 画像ベース再分析による、ランナー画像と完成後図の読み取り結果の整理
+- 任意のローカルLLM/Ollama補強分析
 - リスク上位5件の表示
 - 選択フィードバックの詳細分析
 - Markdown形式の改善案レポート生成
@@ -119,6 +165,7 @@
 - matplotlib
 - Plotly
 - Kaleido
+- Ollama対応ローカルLLM（任意）
 
 外部LLM API、実在レビュー、公式データは使用していません。
 
@@ -126,6 +173,7 @@
 
 - `feedback_analyzer.py`、`risk_scorer.py`、`improvement_generator.py` を分離し、分類、スコアリング、改善案生成の責務を明確にしました。
 - `part_visualizer.py` で架空ランナー模式図と組み立て後の関節・接続部検査図をPlotlyで描画し、対象部位、ゲート位置、細い部位、保持力リスクを視覚的に確認できるようにしました。
+- ランナー検査ビューでは、実在商品ではないオリジナル生成画像 `assets/runner_bg_realistic.png` を背景に使い、写真らしいランナー上へリスクマーカーを重ねています。
 - `image_based_analyzer.py` で、生成済みの検査画像に含まれる部品番号、ゲート点、リスク色、検査ラベルを再整理し、画像を見ながら説明できる分析コメントを生成します。現段階では実画像認識ではなく、アプリが描画した検査点を構造化して読み解く実装です。
 - `analyze_feedback(feedback_text)` の入出力を辞書形式に固定し、将来的にLLM APIや機械学習モデルへ差し替えやすくしました。
 - `schemas.py` に `TypedDict` と行単位警告用の dataclass を置き、主要な分析レコードのスキーマを明示しました。
@@ -153,6 +201,7 @@ plamo-design-feedback-ai/
   risk_scorer.py
   improvement_generator.py
   image_based_analyzer.py
+  llm_adapter.py
   part_visualizer.py
   schemas.py
   requirements.txt
@@ -161,6 +210,8 @@ plamo-design-feedback-ai/
     workflows/
       ci.yml
   assets/
+    runner_bg_realistic.png
+    assembled_bg_original.png
     runner_sample.png
     assembled_sample.png
   data/
@@ -173,8 +224,13 @@ plamo-design-feedback-ai/
     concept.md
     scoring_policy.md
     validation_and_extension_plan.md
+    portfolio_review.md
     screenshots/
       dashboard.png
+      detail_carte.png
+      local_llm_panel.png
+      risk_map_runner_view.png
+      risk_map_assembled_view.png
   scripts/
     generate_portfolio_assets.py
   tests/

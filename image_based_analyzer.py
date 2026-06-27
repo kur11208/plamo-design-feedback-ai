@@ -26,13 +26,13 @@ RUNNER_IMAGE_CUES = {
         "recommended_action": "グリップ接触面を避けてゲートを配置し、保持用の浅い凹凸を検討する",
     },
     "backpack": {
-        "visual_target": "A4 backpack",
+        "visual_target": "B2 backpack",
         "visual_cue": "大きめの装甲ブロック、低リスク色",
         "risk_interpretation": "ランナー段階の破損リスクは低いが、完成後は荷重影響を確認",
         "recommended_action": "切り出しよりも完成後の重心・肩腰への荷重伝達を確認する",
     },
     "gate_area": {
-        "visual_target": "A5 gate_area",
+        "visual_target": "B3 gate_area",
         "visual_cue": "外観面に近い複数ゲート点",
         "risk_interpretation": "素組み時のゲート跡視認性、初心者の処理負担",
         "recommended_action": "ゲートを裏側・側面・装甲の影になる位置へ移動する",

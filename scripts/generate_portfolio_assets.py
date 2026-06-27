@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import shutil
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -40,6 +41,8 @@ def main() -> None:
 
     _save_risk_map(records, "runner_state", ASSETS_DIR / "runner_sample.png")
     _save_risk_map(records, "assembled_state", ASSETS_DIR / "assembled_sample.png")
+    shutil.copyfile(ASSETS_DIR / "runner_sample.png", SCREENSHOTS_DIR / "risk_map_runner_view.png")
+    shutil.copyfile(ASSETS_DIR / "assembled_sample.png", SCREENSHOTS_DIR / "risk_map_assembled_view.png")
     _save_dashboard_overview(records, result_df, priority_df, SCREENSHOTS_DIR / "dashboard.png")
     _save_image_based_report(records, OUTPUTS_DIR / "image_based_analysis.md")
 

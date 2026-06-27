@@ -23,6 +23,13 @@ from image_based_analyzer import (
     build_image_based_findings,
     build_image_based_report,
 )
+from llm_adapter import (
+    DEFAULT_LOCAL_LLM_ENDPOINT,
+    DEFAULT_LOCAL_LLM_MODEL,
+    DEFAULT_LOCAL_LLM_TIMEOUT,
+    generate_local_llm_analysis,
+    get_local_llm_status,
+)
 from part_visualizer import (
     build_fix_point_rows,
     plot_assembled_inspection_map,
@@ -703,6 +710,72 @@ def build_image_findings_dataframe(findings: list[dict[str, Any]]) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
+def render_local_llm_panel(record: FeedbackRecord) -> None:
+    record_key = str(record.get("feedback_id", "unknown")).replace(" ", "_").replace("-", "_")
+    result_key = f"local_llm_result_{record_key}"
+    status_key = f"local_llm_connection_{record_key}"
+
+    with st.expander("ローカルAI補強分析（Ollama・任意）", expanded=False):
+        st.caption(
+            "risk_score はルールベースのまま固定し、ローカルモデルでは原因説明・改善案・検証観点だけを補強します。"
+            "Ollamaが起動していない場合も、通常の分析画面はそのまま使えます。"
+        )
+        config_cols = st.columns([2, 3, 1])
+        model = config_cols[0].text_input(
+            "モデル",
+            value=DEFAULT_LOCAL_LLM_MODEL,
+            key=f"local_llm_model_{record_key}",
+        )
+        endpoint = config_cols[1].text_input(
+            "エンドポイント",
+            value=DEFAULT_LOCAL_LLM_ENDPOINT,
+            key=f"local_llm_endpoint_{record_key}",
+        )
+        timeout = config_cols[2].number_input(
+            "timeout秒",
+            min_value=5,
+            max_value=120,
+            value=int(DEFAULT_LOCAL_LLM_TIMEOUT),
+            step=5,
+            key=f"local_llm_timeout_{record_key}",
+        )
+
+        action_cols = st.columns([1, 1, 4])
+        if action_cols[0].button("接続確認", key=f"local_llm_status_{record_key}"):
+            status = get_local_llm_status(endpoint=endpoint, timeout=3)
+            st.session_state[status_key] = status
+
+        if action_cols[1].button("補強分析を生成", key=f"local_llm_generate_{record_key}"):
+            with st.spinner("ローカルモデルで補強分析を生成しています..."):
+                st.session_state[result_key] = generate_local_llm_analysis(
+                    record,
+                    endpoint=endpoint,
+                    model=model,
+                    timeout=float(timeout),
+                )
+
+        status_result = st.session_state.get(status_key)
+        if isinstance(status_result, dict):
+            if status_result.get("available"):
+                models = ", ".join(status_result.get("models", [])[:6]) or "モデル一覧なし"
+                st.success(f"Ollamaに接続できました: {models}")
+            else:
+                st.warning(f"接続できませんでした: {status_result.get('error', 'unknown error')}")
+
+        result = st.session_state.get(result_key)
+        if isinstance(result, dict):
+            if result["ok"]:
+                st.markdown(result["content"])
+                st.caption(f"model: `{result['model']}` / endpoint: `{result['endpoint']}`")
+            else:
+                st.warning(f"ローカルAI補強分析を生成できませんでした: {result['error']}")
+
+        st.markdown(
+            "PowerShell例: `ollama serve` を起動し、別ターミナルで "
+            "`ollama pull llama3.2:3b` など任意のモデルを用意します。"
+        )
+
+
 def build_priority_recommendation(record: FeedbackRecord) -> dict[str, str]:
     score = int(record.get("risk_score", 0))
     level = risk_level(score)
@@ -842,6 +915,7 @@ def render_detail_analysis(record: FeedbackRecord, records: list[FeedbackRecord]
     st.dataframe(fix_plan_df, width="stretch", hide_index=True)
     st.markdown("**Before/After 検証計画**")
     st.dataframe(build_validation_plan_dataframe(record), width="stretch", hide_index=True)
+    render_local_llm_panel(record)
 
     st.markdown("### 推定原因")
     st.markdown(build_contextual_cause_summary(record))
