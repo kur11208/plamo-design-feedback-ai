@@ -78,14 +78,14 @@ ASSEMBLED_IMAGE_CUES = {
         "recommended_action": "交換時のつまみ代、保持面、グリップ接触形状を調整する",
     },
     "weapon_grip": {
-        "visual_target": "weapon_grip",
-        "visual_cue": "武器側の中リスクマーカー",
+        "visual_target": "weapon_grip check card",
+        "visual_cue": "完成後画像には武器が写っていないため、別パーツ保持部の確認カードとして表示",
         "risk_interpretation": "武器保持時の落下、抜き差し後の保持力低下",
         "recommended_action": "グリップ径、手の開き量、浅いストッパー形状を調整する",
     },
     "backpack": {
-        "visual_target": "backpack",
-        "visual_cue": "背面側の低リスクマーカー",
+        "visual_target": "backpack rear-view check card",
+        "visual_cue": "正面画像では背面部品が見えにくいため、背面/別視点の確認カードとして表示",
         "risk_interpretation": "単体リスクは低めだが、背面荷重として肩・腰へ影響",
         "recommended_action": "単体ではなく重心・肩腰への荷重伝達を確認する",
     },

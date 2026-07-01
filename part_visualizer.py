@@ -58,14 +58,14 @@ PART_LABELS = {
 RUNNER_PART_LAYOUT = {
     "antenna": {
         "part_no": "A1",
-        "center": (1.26, 6.86),
-        "gate_points": [(1.23, 7.62), (1.42, 5.98)],
+        "center": (1.58, 6.48),
+        "gate_points": [(1.46, 5.72), (1.72, 5.72)],
         "ann": {"ax": -55, "ay": -40},
     },
     "hand_parts": {
         "part_no": "A2",
-        "center": (3.04, 6.85),
-        "gate_points": [(2.24, 6.70), (3.92, 6.66)],
+        "center": (3.38, 6.88),
+        "gate_points": [(2.45, 6.88), (3.90, 6.88)],
         "ann": {"ax": -60, "ay": -42},
     },
     "weapon_grip": {
@@ -82,28 +82,26 @@ RUNNER_PART_LAYOUT = {
     },
     "gate_area": {
         "part_no": "B3",
-        "center": (1.35, 3.95),
-        "gate_points": [(1.10, 3.95), (1.88, 4.38), (1.88, 3.56)],
+        "center": (1.34, 4.45),
+        "gate_points": [(0.92, 4.48), (2.02, 4.80), (2.05, 4.08)],
         "ann": {"ax": -60, "ay": 42},
     },
 }
 
 ASSEMBLED_PART_LAYOUT = {
-    "shoulder_joint": {"x": 3.85, "y": 6.56, "shape": "circle", "ann": {"ax": -86, "ay": -28}},
-    "elbow_joint":    {"x": 3.20, "y": 5.30, "shape": "circle", "ann": {"ax": -82, "ay": -22}},
-    "waist_joint":    {"x": 5.00, "y": 4.32, "shape": "square", "ann": {"ax": 0,   "ay": 62}},
-    "leg_joint":      {"x": 4.35, "y": 2.58, "shape": "circle", "ann": {"ax": -76, "ay": 42}},
-    "hand_parts":     {"x": 3.10, "y": 3.83, "shape": "circle", "ann": {"ax": -86, "ay": 32}},
-    "weapon_grip":    {"x": 3.45, "y": 3.78, "shape": "square", "ann": {"ax": -82, "ay": -22}},
-    "backpack":       {"x": 6.18, "y": 6.18, "shape": "square", "ann": {"ax": 82,  "ay": -32}},
+    "shoulder_joint": {"x": 3.72, "y": 6.50, "shape": "circle", "ann": {"ax": -86, "ay": -28}},
+    "elbow_joint":    {"x": 3.08, "y": 5.18, "shape": "circle", "ann": {"ax": -82, "ay": -22}},
+    "waist_joint":    {"x": 4.95, "y": 4.42, "shape": "square", "ann": {"ax": 0,   "ay": 62}},
+    "leg_joint":      {"x": 4.10, "y": 3.28, "shape": "circle", "ann": {"ax": -76, "ay": 42}},
+    "hand_parts":     {"x": 3.12, "y": 4.42, "shape": "circle", "ann": {"ax": -86, "ay": 32}},
+    "weapon_grip":    {"x": 7.90, "y": 3.25, "shape": "square", "external": True, "note": "別パーツ保持部"},
+    "backpack":       {"x": 7.90, "y": 4.55, "shape": "square", "external": True, "note": "背面/別視点"},
 }
 
 ASSEMBLED_CONNECTIONS = [
     ("shoulder_joint", "waist_joint"),
     ("shoulder_joint", "elbow_joint"),
     ("elbow_joint", "hand_parts"),
-    ("shoulder_joint", "backpack"),
-    ("waist_joint", "weapon_grip"),
     ("waist_joint", "leg_joint"),
 ]
 
@@ -276,6 +274,19 @@ def plot_assembled_inspection_map(
         is_hl      = highlight_part_area == part_area
         score_text = f"{risk_score:.0f}" if risk_score is not None else "n/a"
         msize      = 32 if (risk_score or 0) >= 70 else 24 if (risk_score or 0) >= 40 else 18
+
+        if layout.get("external"):
+            _add_assembled_external_card(
+                fig,
+                part_area,
+                risk_score,
+                main_cat,
+                str(layout.get("note", "画像外確認")),
+                x=x,
+                y=y,
+                highlight=is_hl,
+            )
+            continue
 
         if risk_score is not None and risk_score >= 70:
             fig.add_shape(type="circle",
@@ -671,6 +682,76 @@ def _add_manual_note_card(fig: go.Figure, risk_score: float | None,
                        text=main_issue_category or "assembly_difficulty",
                        showarrow=False, xanchor="left",
                        font=dict(size=8, color=_MUTED), xref="x", yref="y")
+
+
+def _add_assembled_external_card(
+    fig: go.Figure,
+    part_area: str,
+    risk_score: float | None,
+    main_issue_category: str,
+    note: str,
+    *,
+    x: float,
+    y: float,
+    highlight: bool = False,
+) -> None:
+    w, h = 1.85, 0.92
+    x0, y0 = x - w / 2, y - h / 2
+    x1, y1 = x + w / 2, y + h / 2
+    facecolor = _risk_color(risk_score)
+    score_text = f"{risk_score:.0f}" if risk_score is not None else "n/a"
+
+    fig.add_shape(
+        type="rect",
+        x0=x0,
+        y0=y0,
+        x1=x1,
+        y1=y1,
+        fillcolor=facecolor,
+        opacity=0.25,
+        line=dict(color=facecolor, width=1.5, dash="dot"),
+    )
+    if highlight:
+        fig.add_shape(
+            type="rect",
+            x0=x0 - 0.10,
+            y0=y0 - 0.10,
+            x1=x1 + 0.10,
+            y1=y1 + 0.10,
+            fillcolor="rgba(0,0,0,0)",
+            line=dict(color="#FC8181", width=2.2, dash="dash"),
+        )
+
+    fig.add_annotation(
+        x=x0 + 0.12,
+        y=y1 - 0.18,
+        text=f"<b>{part_area}</b>",
+        showarrow=False,
+        xanchor="left",
+        font=dict(size=8.5, color=_TEXT),
+        xref="x",
+        yref="y",
+    )
+    fig.add_annotation(
+        x=x0 + 0.12,
+        y=y1 - 0.45,
+        text=f"risk <b>{score_text}</b> / {note}",
+        showarrow=False,
+        xanchor="left",
+        font=dict(size=7.8, color=_TEXT),
+        xref="x",
+        yref="y",
+    )
+    fig.add_annotation(
+        x=x0 + 0.12,
+        y=y0 + 0.18,
+        text=main_issue_category or "n/a",
+        showarrow=False,
+        xanchor="left",
+        font=dict(size=7.5, color=_MUTED),
+        xref="x",
+        yref="y",
+    )
 
 
 def _add_risk_legend(fig: go.Figure) -> None:
