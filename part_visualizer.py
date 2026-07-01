@@ -59,7 +59,7 @@ RUNNER_PART_LAYOUT = {
     "antenna": {
         "part_no": "A1",
         "center": (1.58, 6.48),
-        "gate_points": [(1.46, 5.72), (1.72, 5.72)],
+        "gate_points": [(1.04, 7.16), (2.12, 7.16)],
         "ann": {"ax": -55, "ay": -40},
     },
     "hand_parts": {
@@ -167,7 +167,9 @@ def plot_runner_inspection_map(
         color       = _risk_color(risk_score)
         score_text  = f"{risk_score:.0f}" if has_feedback else "参考"
 
-        if not bg_src:
+        if bg_src and part_area == "antenna":
+            _draw_runner_antenna_overlay(fig, cx, cy, color)
+        elif not bg_src:
             _draw_runner_part_shape(fig, part_area, cx, cy, color)
         _draw_gate_markers(fig, layout["gate_points"], issue_cats, gate_pos, active=has_feedback or is_hl)
 
@@ -517,6 +519,45 @@ def _draw_runner_part_shape(fig: go.Figure, part_area: str,
         p(f"M {cx-0.38} {cy-0.38} L {cx+0.38} {cy-0.38} L {cx+0.38} {cy+0.38} L {cx-0.38} {cy+0.38} Z")
 
 
+def _draw_runner_antenna_overlay(fig: go.Figure, cx: float, cy: float, color: str) -> None:
+    """Make the A1 part read as a V antenna when using a photo-like background."""
+
+    outline = dict(color="#E2E8F0", width=1.25)
+    risk_outline = dict(color="#FC8181", width=1.4, dash="dot")
+    fill = _transparent_color(color, 0.24)
+    base_fill = "rgba(40,45,60,0.72)"
+
+    def add(path: str, *, accent: bool = False) -> None:
+        fig.add_shape(
+            type="path",
+            path=path,
+            fillcolor=base_fill if accent else fill,
+            line=outline,
+        )
+
+    # A fictional V antenna: two long fins, a center nub, and a shared base.
+    add(f"M {cx-0.25} {cy-0.58} L {cx-0.56} {cy+0.70} "
+        f"L {cx-0.38} {cy+0.78} L {cx-0.05} {cy-0.12} "
+        f"L {cx+0.04} {cy-0.58} Z")
+    add(f"M {cx+0.25} {cy-0.58} L {cx+0.56} {cy+0.70} "
+        f"L {cx+0.38} {cy+0.78} L {cx+0.05} {cy-0.12} "
+        f"L {cx-0.04} {cy-0.58} Z")
+    add(f"M {cx-0.08} {cy-0.16} L {cx} {cy+0.70} L {cx+0.08} {cy-0.16} Z")
+    add(f"M {cx-0.34} {cy-0.72} L {cx+0.34} {cy-0.72} "
+        f"L {cx+0.26} {cy-0.48} L {cx-0.26} {cy-0.48} Z", accent=True)
+
+    # Highlight the thin fin tips independently from the gate markers.
+    fig.add_shape(
+        type="circle",
+        x0=cx - 0.70,
+        y0=cy + 0.52,
+        x1=cx + 0.70,
+        y1=cy + 0.95,
+        fillcolor="rgba(0,0,0,0)",
+        line=risk_outline,
+    )
+
+
 def _draw_gate_markers(
     fig: go.Figure,
     gate_points: list,
@@ -822,6 +863,16 @@ def _risk_color(risk_score: float | None) -> str:
     if risk_score >= 70:         return RISK_COLORS["high"]
     if risk_score >= 40:         return RISK_COLORS["medium"]
     return RISK_COLORS["low"]
+
+
+def _transparent_color(hex_color: str, alpha: float) -> str:
+    value = hex_color.lstrip("#")
+    if len(value) != 6:
+        return f"rgba(113,128,150,{alpha})"
+    red = int(value[0:2], 16)
+    green = int(value[2:4], 16)
+    blue = int(value[4:6], 16)
+    return f"rgba({red},{green},{blue},{alpha})"
 
 
 def _risk_level(risk_score: float | None) -> str:
