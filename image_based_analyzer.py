@@ -28,8 +28,8 @@ RUNNER_IMAGE_CUES = {
     "backpack": {
         "visual_target": "B2 backpack",
         "visual_cue": "大きめの装甲ブロック、低リスク色",
-        "risk_interpretation": "ランナー段階の破損リスクは低いが、完成後は荷重影響を確認",
-        "recommended_action": "切り出しよりも完成後の重心・肩腰への荷重伝達を確認する",
+        "risk_interpretation": "大型部品のため破損リスクは低めだが、ゲート位置と切り出し時の保持姿勢を確認",
+        "recommended_action": "外観面を避けたゲート配置と、切り出し時に持ちやすいランナー接続を確認する",
     },
     "gate_area": {
         "visual_target": "B3 gate_area",

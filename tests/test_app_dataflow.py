@@ -4,7 +4,13 @@ import unittest
 
 import pandas as pd
 
-from app import analyze_feedback_dataframe, build_priority_ranking_dataframe, build_result_dataframe
+from app import (
+    analyze_feedback_dataframe,
+    build_priority_ranking_dataframe,
+    build_result_dataframe,
+    build_runner_image_report,
+    build_runner_input_record,
+)
 from improvement_generator import build_improvement_report, generate_actionable_fix_plan
 
 
@@ -61,6 +67,43 @@ class AppDataflowTest(unittest.TestCase):
         self.assertEqual(len(row_warnings), 2)
         self.assertIn("feedback_text", row_warnings[0].message)
         self.assertIn("inspection_phase", row_warnings[1].message)
+
+    def test_runner_input_record_scores_image_features(self) -> None:
+        record = build_runner_input_record(
+            part_area="antenna",
+            part_size="small",
+            material_type="PS",
+            gate_position="tip",
+            estimated_load="high",
+            assembly_step="runner_check",
+            observations=["thin_or_fragile", "tip_gate"],
+        )
+
+        self.assertEqual(record["inspection_phase"], "runner_state")
+        self.assertIn("breakage_risk", record["issue_categories"])
+        self.assertIn("gate_mark", record["issue_categories"])
+        self.assertGreaterEqual(record["risk_score"], 70)
+        self.assertGreaterEqual(len(generate_actionable_fix_plan(record)), 1)
+
+    def test_runner_image_report_is_runner_focused(self) -> None:
+        records = analyze_feedback_dataframe(self.feedback_df)
+        findings = [
+            {
+                "risk_level": "High",
+                "visual_target": "A1 antenna",
+                "risk_score": 77,
+                "main_issue_category": "breakage_risk",
+                "visual_cue": "細い部品と先端ゲート",
+                "recommended_action": "ゲート位置と根元厚みを見直す",
+            }
+        ]
+        report = build_runner_image_report(findings, "assets/runner_sample.png")
+
+        self.assertIn("ランナー画像ベース評価レポート", report)
+        self.assertIn("assets/runner_sample.png", report)
+        self.assertIn("A1 antenna", report)
+        self.assertNotIn("完成後画像", report)
+        self.assertGreater(len(records), 0)
 
 
 if __name__ == "__main__":

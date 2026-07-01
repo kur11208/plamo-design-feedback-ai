@@ -17,9 +17,10 @@ from app import (
     analyze_feedback_dataframe,
     build_priority_ranking_dataframe,
     build_result_dataframe,
+    build_runner_image_report,
     most_common_issue_category,
 )
-from image_based_analyzer import build_image_based_report
+from image_based_analyzer import build_image_based_findings
 from part_visualizer import plot_part_risk_map
 
 
@@ -40,9 +41,7 @@ def main() -> None:
     priority_df = build_priority_ranking_dataframe(records)
 
     _save_risk_map(records, "runner_state", ASSETS_DIR / "runner_sample.png")
-    _save_risk_map(records, "assembled_state", ASSETS_DIR / "assembled_sample.png")
     shutil.copyfile(ASSETS_DIR / "runner_sample.png", SCREENSHOTS_DIR / "risk_map_runner_view.png")
-    shutil.copyfile(ASSETS_DIR / "assembled_sample.png", SCREENSHOTS_DIR / "risk_map_assembled_view.png")
     _save_dashboard_overview(records, result_df, priority_df, SCREENSHOTS_DIR / "dashboard.png")
     _save_image_based_report(records, OUTPUTS_DIR / "image_based_analysis.md")
 
@@ -53,7 +52,8 @@ def _save_risk_map(records: list[dict], inspection_phase: str, output_path: Path
 
 
 def _save_image_based_report(records: list[dict], output_path: Path) -> None:
-    report = build_image_based_report(records, "assets/runner_sample.png", "assets/assembled_sample.png")
+    runner_findings = build_image_based_findings(records, "runner_state")
+    report = build_runner_image_report(runner_findings, "assets/runner_sample.png")
     output_path.write_text(report, encoding="utf-8")
 
 
