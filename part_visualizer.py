@@ -88,14 +88,16 @@ RUNNER_PART_LAYOUT = {
     },
 }
 
+ASSEMBLED_BG_BOUNDS = {"x": 0.70, "y": 8.80, "w": 8.60, "h": 5.73}
+
 ASSEMBLED_PART_LAYOUT = {
-    "shoulder_joint": {"x": 3.72, "y": 6.50, "shape": "circle", "ann": {"ax": -86, "ay": -28}},
-    "elbow_joint":    {"x": 3.08, "y": 5.18, "shape": "circle", "ann": {"ax": -82, "ay": -22}},
-    "waist_joint":    {"x": 4.95, "y": 4.42, "shape": "square", "ann": {"ax": 0,   "ay": 62}},
-    "leg_joint":      {"x": 4.10, "y": 3.28, "shape": "circle", "ann": {"ax": -76, "ay": 42}},
-    "hand_parts":     {"x": 3.12, "y": 4.42, "shape": "circle", "ann": {"ax": -86, "ay": 32}},
-    "weapon_grip":    {"x": 7.90, "y": 3.25, "shape": "square", "external": True, "note": "別パーツ保持部"},
-    "backpack":       {"x": 7.90, "y": 4.55, "shape": "square", "external": True, "note": "背面/別視点"},
+    "shoulder_joint": {"fx": 0.407, "fy": 0.188, "shape": "circle", "ann": {"ax": -92, "ay": -28}},
+    "elbow_joint":    {"fx": 0.337, "fy": 0.318, "shape": "circle", "ann": {"ax": -86, "ay": -18}},
+    "waist_joint":    {"fx": 0.500, "fy": 0.405, "shape": "square", "ann": {"ax": 0,   "ay": 64}},
+    "leg_joint":      {"fx": 0.397, "fy": 0.606, "shape": "circle", "ann": {"ax": -82, "ay": 44}},
+    "hand_parts":     {"fx": 0.324, "fy": 0.500, "shape": "circle", "ann": {"ax": -88, "ay": 34}},
+    "weapon_grip":    {"x": 8.35, "y": 4.75, "shape": "square", "external": True, "note": "別パーツ保持部"},
+    "backpack":       {"x": 8.35, "y": 5.85, "shape": "square", "external": True, "note": "背面/別視点"},
 }
 
 ASSEMBLED_CONNECTIONS = [
@@ -232,14 +234,16 @@ def plot_assembled_inspection_map(
     fig = go.Figure()
     _apply_base_layout(fig, "組み立て後リスクマップ",
                        "関節の固さ・保持力不足・ポージング安定性を可視化します。")
+    _focus_assembled_layout(fig)
 
     bg_src = _load_bg_image("assembled_bg_original.png")
     if bg_src:
+        bounds = ASSEMBLED_BG_BOUNDS
         fig.add_layout_image(
             source=bg_src,
             xref="x", yref="y",
-            x=0.0, y=9.5,
-            sizex=10.0, sizey=9.5,
+            x=bounds["x"], y=bounds["y"],
+            sizex=bounds["w"], sizey=bounds["h"],
             xanchor="left", yanchor="top",
             opacity=0.42,
             layer="below",
@@ -253,9 +257,11 @@ def plot_assembled_inspection_map(
         la = ASSEMBLED_PART_LAYOUT.get(part_a)
         lb = ASSEMBLED_PART_LAYOUT.get(part_b)
         if la and lb:
+            ax, ay = _assembled_layout_point(la)
+            bx, by = _assembled_layout_point(lb)
             fig.add_trace(go.Scatter(
-                x=[float(la["x"]), float(lb["x"])],
-                y=[float(la["y"]), float(lb["y"])],
+                x=[ax, bx],
+                y=[ay, by],
                 mode="lines",
                 line=dict(color="rgba(160,180,220,0.35)", width=1.8),
                 hoverinfo="skip", showlegend=False,
@@ -269,7 +275,7 @@ def plot_assembled_inspection_map(
         main_cat   = info.get("main_issue_category", "n/a")
         issue_cats = info.get("issue_categories", [])
         color      = _risk_color(risk_score)
-        x, y       = float(layout["x"]), float(layout["y"])
+        x, y       = _assembled_layout_point(layout)
         shape      = "square" if layout.get("shape") in {"rect", "square"} else "circle"
         is_hl      = highlight_part_area == part_area
         score_text = f"{risk_score:.0f}" if risk_score is not None else "n/a"
@@ -395,6 +401,19 @@ def _apply_base_layout(fig: go.Figure, title: str, subtitle: str) -> None:
     fig.add_annotation(x=5, y=0.22, text=_DISCLAIMER, showarrow=False,
                        font=dict(size=8, color="#4A5568"),
                        xref="x", yref="y", xanchor="center")
+
+
+def _focus_assembled_layout(fig: go.Figure) -> None:
+    fig.update_layout(
+        xaxis=dict(range=[0.20, 9.80], showgrid=False, zeroline=False,
+                   showticklabels=False, fixedrange=True),
+        yaxis=dict(range=[2.45, 9.30], showgrid=False, zeroline=False,
+                   showticklabels=False, fixedrange=True,
+                   scaleanchor="x", scaleratio=1),
+    )
+    if len(fig.layout.annotations) >= 2:
+        fig.layout.annotations[-2].update(y=9.08)
+        fig.layout.annotations[-1].update(y=2.60)
 
 
 def _draw_runner_frame(fig: go.Figure) -> None:
@@ -815,6 +834,16 @@ def _risk_level(risk_score: float | None) -> str:
 def _point(value: Any) -> tuple[float, float]:
     x, y = value
     return float(x), float(y)
+
+
+def _assembled_layout_point(layout: Mapping[str, Any]) -> tuple[float, float]:
+    if "fx" in layout and "fy" in layout:
+        bounds = ASSEMBLED_BG_BOUNDS
+        return (
+            float(bounds["x"]) + float(layout["fx"]) * float(bounds["w"]),
+            float(bounds["y"]) - float(layout["fy"]) * float(bounds["h"]),
+        )
+    return float(layout["x"]), float(layout["y"])
 
 
 def _priority_label(risk_score: int) -> str:
