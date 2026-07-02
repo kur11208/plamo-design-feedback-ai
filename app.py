@@ -171,9 +171,18 @@ def main() -> None:
 
     render_portfolio_overview(records)
     render_summary_cards(records)
-    render_single_feedback_demo()
 
-    st.subheader("改善優先度ランキング")
+    st.divider()
+    render_runner_input_evaluation(records)
+
+    st.divider()
+    st.subheader("サンプルデータから見る改善優先度")
+    st.caption(
+        "下記は架空CSVを集計した根拠データです。主画面のランナー入力評価で使う分類、"
+        "リスクスコア、改善案生成のルールが、サンプルデータ全体でもどう働くかを確認できます。"
+    )
+
+    st.markdown("**改善優先度ランキング**")
     priority_df = build_priority_ranking_dataframe(records)
     st.dataframe(
         priority_df[
@@ -192,12 +201,6 @@ def main() -> None:
         hide_index=True,
     )
 
-    st.subheader("サンプルCSV")
-    st.dataframe(feedback_df, width="stretch", hide_index=True)
-
-    st.subheader("フィードバックごとの分析結果")
-    st.dataframe(result_df, width="stretch", hide_index=True)
-
     left_col, right_col = st.columns(2)
     with left_col:
         st.subheader("部位別の平均リスクスコア")
@@ -207,9 +210,18 @@ def main() -> None:
         st.subheader("問題カテゴリ別の件数")
         st.pyplot(plot_category_counts(records), width="stretch")
 
-    render_runner_input_evaluation(records)
+    with st.expander("サンプルCSVと分類結果（開発者向け）", expanded=False):
+        st.caption("分析に使う架空データと、ルールベース分類後の全レコードを確認できます。")
+        st.subheader("サンプルCSV")
+        st.dataframe(feedback_df, width="stretch", hide_index=True)
 
-    render_image_based_analysis(records)
+        st.subheader("フィードバックごとの分析結果")
+        st.dataframe(result_df, width="stretch", hide_index=True)
+
+    render_single_feedback_demo()
+
+    with st.expander("生成済みランナー画像からの評価レポート", expanded=False):
+        render_image_based_analysis(records)
 
     st.subheader("リスク上位5件")
     top5_df = result_df.sort_values("risk_score", ascending=False).head(5)
@@ -392,19 +404,19 @@ def render_portfolio_overview(records: list[FeedbackRecord]) -> None:
         top_reason = str(priority_df.iloc[0]["main_issue_category_label"])
 
     with st.container(border=True):
-        st.markdown("**このダッシュボードで最初に見ること**")
+        st.markdown("**このプロトタイプで見せたい流れ**")
         cols = st.columns(3)
         cols[0].markdown(
-            "**改善優先部位**  \n"
-            f"{top_part} を起点に、リスクが集中する部位を確認します。"
+            "**1. ランナー画像・特徴を入力**  \n"
+            "切り出し前の画像や試作写真を見ながら、部品サイズ、ゲート位置、負荷を指定します。"
         )
         cols[1].markdown(
-            "**主なリスク要因**  \n"
-            f"{top_reason} など、ユーザーの声と部品特徴を結びつけます。"
+            "**2. リスク理由を説明**  \n"
+            f"{top_part} / {top_reason} のように、部品特徴とユーザーの声を結びつけて採点します。"
         )
         cols[2].markdown(
-            "**ランナー入力評価**  \n"
-            "画像や部品特徴から、切り出し前のゲート・破損リスクを確認します。"
+            "**3. 具体的な変更案へ接続**  \n"
+            "ゲート位置、肉厚、説明書注意、検証方法まで、開発改善の会話に使える形で返します。"
         )
 
 
@@ -433,7 +445,7 @@ def render_single_feedback_demo() -> None:
             height=90,
         )
         top_cols = st.columns(3)
-        part_area = top_cols[0].selectbox("対象部位", PART_AREA_OPTIONS, index=3)
+        part_area = top_cols[0].selectbox("対象部位", PART_AREA_OPTIONS, index=3, format_func=_part_area_label)
         inspection_phase = top_cols[1].selectbox("検査フェーズ", ("runner_state", "assembled_state"), index=0)
         assembly_step = top_cols[2].number_input("工程番号", min_value=1, max_value=99, value=18)
 
@@ -682,7 +694,7 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
         part_area = st.selectbox(
             "評価対象",
             RUNNER_EVALUATION_PARTS,
-            format_func=lambda value: f"{_part_area_label(value)} ({value})",
+            format_func=_part_area_label,
         )
         feature_cols = st.columns(2)
         with feature_cols[0]:
