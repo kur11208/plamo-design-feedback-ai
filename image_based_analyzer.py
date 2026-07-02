@@ -8,10 +8,10 @@ from typing import Any
 
 RUNNER_IMAGE_CUES = {
     "antenna": {
-        "visual_target": "A1 antenna",
-        "visual_cue": "細いV字形状、先端付近のゲート点、赤い点線囲み",
-        "risk_interpretation": "切り出し時の破損、白化、細い根元への応力集中",
-        "recommended_action": "ゲート位置を先端から逃がし、根元厚みと切り出し順序の注意表示を見直す",
+        "visual_target": "A1 thin_part",
+        "visual_cue": "細長い小型パーツ、ゲート点、赤い点線囲み",
+        "risk_interpretation": "切り出し時の破損、白化、細い部分への応力集中",
+        "recommended_action": "ゲート位置を目立ちにくい側へ逃がし、根元厚みと切り出し順序の注意表示を見直す",
     },
     "hand_parts": {
         "visual_target": "A2 hand_parts",

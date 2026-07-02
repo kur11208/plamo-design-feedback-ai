@@ -21,7 +21,7 @@ class ActionableFixPlanTest(unittest.TestCase):
         self.assertIn("可動初期抵抗", joined)
         self.assertIn("白化発生率", joined)
 
-    def test_antenna_plan_is_specific(self) -> None:
+    def test_thin_part_plan_is_specific(self) -> None:
         plans = generate_actionable_fix_plan(
             {
                 "part_area": "antenna",
@@ -30,7 +30,7 @@ class ActionableFixPlanTest(unittest.TestCase):
         )
         joined = " ".join(" ".join(plan.values()) for plan in plans)
 
-        self.assertIn("アンテナ根元", joined)
+        self.assertIn("細長いA1パーツ", joined)
         self.assertIn("ゲート位置", joined)
         self.assertIn("切り出し時の破損率", joined)
 

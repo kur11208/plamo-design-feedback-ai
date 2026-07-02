@@ -17,7 +17,7 @@ class ImageBasedAnalyzerTest(unittest.TestCase):
         feedback_df = pd.read_csv("data/sample_feedback.csv", encoding="utf-8")
         self.records = analyze_feedback_dataframe(feedback_df)
 
-    def test_runner_image_findings_prioritize_antenna(self) -> None:
+    def test_runner_image_findings_prioritize_thin_part(self) -> None:
         findings = build_image_based_findings(self.records, "runner_state")
 
         self.assertEqual(findings[0]["part_area"], "antenna")
@@ -37,7 +37,7 @@ class ImageBasedAnalyzerTest(unittest.TestCase):
 
         self.assertIn("画像上の読み取り", display_df.columns)
         self.assertIn("改善方向", display_df.columns)
-        self.assertIn("アンテナ", set(display_df["部位"]))
+        self.assertIn("細長い小型パーツ", set(display_df["部位"]))
 
     def test_cross_image_insights_include_small_parts_ux(self) -> None:
         insights = build_cross_image_insights(self.records)

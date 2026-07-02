@@ -90,7 +90,7 @@ class AppDataflowTest(unittest.TestCase):
         findings = [
             {
                 "risk_level": "High",
-                "visual_target": "A1 antenna",
+                "visual_target": "A1 thin_part",
                 "risk_score": 77,
                 "main_issue_category": "breakage_risk",
                 "visual_cue": "細い部品と先端ゲート",
@@ -101,7 +101,7 @@ class AppDataflowTest(unittest.TestCase):
 
         self.assertIn("ランナー画像ベース評価レポート", report)
         self.assertIn("assets/runner_sample.png", report)
-        self.assertIn("A1 antenna", report)
+        self.assertIn("A1 thin_part", report)
         self.assertNotIn("完成後画像", report)
         self.assertGreater(len(records), 0)
 

@@ -96,7 +96,7 @@ PART_AREA_LABELS = {
     "shoulder_joint": "肩関節",
     "elbow_joint": "肘関節",
     "waist_joint": "腰接続",
-    "antenna": "アンテナ",
+    "antenna": "細長い小型パーツ",
     "backpack": "背面装備",
     "hand_parts": "手首・手パーツ",
     "weapon_grip": "武器グリップ",
@@ -429,7 +429,7 @@ def render_single_feedback_demo() -> None:
     with st.expander("任意フィードバック分析デモ", expanded=False):
         feedback_text = st.text_area(
             "フィードバック文",
-            value="アンテナ部分が細く、先端付近のゲートを切るときに折れそうで不安だった。",
+            value="A1の細長い小型パーツが薄く、先端付近のゲートを切るときに折れそうで不安だった。",
             height=90,
         )
         top_cols = st.columns(3)

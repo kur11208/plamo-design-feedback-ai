@@ -32,12 +32,12 @@ class PartVisualizerTest(unittest.TestCase):
         # Title
         self.assertIn("切り出し前リスクマップ", fig.layout.title.text)
 
-        # A1 antenna label is on the scatter trace text; others are annotations
+        # A1 thin_part label is on the scatter trace text; others are annotations
         annotation_texts = [ann.text for ann in fig.layout.annotations]
         trace_texts = [str(t) for trace in fig.data for t in (trace.text or []) if t]
         all_texts = annotation_texts + trace_texts
-        self.assertTrue(any("A1" in t and "antenna" in t for t in all_texts if t),
-                        "A1 antenna label missing from annotations or trace texts")
+        self.assertTrue(any("A1" in t and "thin_part" in t for t in all_texts if t),
+                        "A1 thin_part label missing from annotations or trace texts")
         self.assertTrue(any("Manual note" in t for t in annotation_texts if t))
         self.assertTrue(any("selected" in t for t in annotation_texts if t))
         self.assertTrue(any("架空の検査模式図" in t for t in annotation_texts if t))

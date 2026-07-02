@@ -46,7 +46,7 @@ PART_LABELS = {
     "shoulder_joint": "shoulder_joint",
     "elbow_joint": "elbow_joint",
     "waist_joint": "waist_joint",
-    "antenna": "antenna",
+    "antenna": "thin_part",
     "backpack": "backpack",
     "hand_parts": "hand_parts",
     "weapon_grip": "weapon_grip",
@@ -166,6 +166,7 @@ def plot_runner_inspection_map(
         cx, cy      = _point(layout["center"])
         color       = _risk_color(risk_score)
         score_text  = f"{risk_score:.0f}" if has_feedback else "参考"
+        display_label = PART_LABELS.get(part_area, part_area)
 
         if not bg_src:
             _draw_runner_part_shape(fig, part_area, cx, cy, color)
@@ -188,7 +189,7 @@ def plot_runner_inspection_map(
             x=[cx], y=[cy], mode="markers",
             marker=dict(size=44, color="rgba(0,0,0,0)", symbol="circle"),
             hovertemplate=(
-                f"<b>{layout['part_no']} {part_area}</b><br>"
+                f"<b>{layout['part_no']} {display_label}</b><br>"
                 f"risk: {score_text}<br>feedback: {feedback_count}<br>gate: {gate_pos}<br>"
                 f"categories: {', '.join(issue_cats) or '-'}<extra></extra>"
             ),
@@ -206,7 +207,7 @@ def plot_runner_inspection_map(
         flag = "<br><span style='color:#FC8181'>▶ selected</span>" if is_hl else ""
         fig.add_annotation(
             x=cx, y=cy,
-            text=f"<b>{layout['part_no']}</b> {part_area}<br>risk <b>{score_text}</b>{flag}",
+            text=f"<b>{layout['part_no']}</b> {display_label}<br>risk <b>{score_text}</b>{flag}",
             showarrow=True, ax=ann["ax"], ay=ann["ay"],
             axref="pixel", ayref="pixel",
             arrowhead=2, arrowwidth=1.3, arrowcolor=_MUTED,
