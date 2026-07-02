@@ -66,7 +66,7 @@ RUNNER_PART_LAYOUT = {
         "part_no": "A2",
         "center": (3.38, 6.88),
         "gate_points": [(2.45, 6.88), (3.90, 6.88)],
-        "ann": {"ax": 44, "ay": -54},
+        "ann": {"ax": -60, "ay": -42},
     },
     "weapon_grip": {
         "part_no": "A3",
