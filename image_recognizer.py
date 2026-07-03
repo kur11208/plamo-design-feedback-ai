@@ -6,7 +6,7 @@ from collections import deque
 from io import BytesIO
 from typing import TypedDict
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 
 class RunnerImageAnalysis(TypedDict):
@@ -16,6 +16,7 @@ class RunnerImageAnalysis(TypedDict):
     gate_position: str
     estimated_load: str
     observations: list[str]
+    quality_warnings: list[str]
     confidence: float
     metrics: dict[str, float | int]
     findings: list[dict[str, str]]
@@ -44,6 +45,7 @@ def analyze_runner_image(image_bytes: bytes) -> RunnerImageAnalysis:
     thin_line_score = _thin_line_score(active_cells)
     high_brightness_ratio = sum(1 for value in brightness if value >= 210) / max(1, len(brightness))
     low_saturation_ratio = sum(1 for value in saturation if value <= 35) / max(1, len(saturation))
+    high_saturation_ratio = sum(1 for value in saturation if value >= 80) / max(1, len(saturation))
 
     observations = _infer_observations(
         edge_density=edge_density,
@@ -58,6 +60,13 @@ def analyze_runner_image(image_bytes: bytes) -> RunnerImageAnalysis:
     material_type = _infer_material_type(high_brightness_ratio, low_saturation_ratio)
     part_area = _infer_part_area(observations)
     confidence = _confidence(edge_density, component_count, observations)
+    quality_warnings = _infer_quality_warnings(
+        edge_density=edge_density,
+        component_count=component_count,
+        high_brightness_ratio=high_brightness_ratio,
+        low_saturation_ratio=low_saturation_ratio,
+        high_saturation_ratio=high_saturation_ratio,
+    )
 
     return {
         "part_area": part_area,
@@ -66,6 +75,7 @@ def analyze_runner_image(image_bytes: bytes) -> RunnerImageAnalysis:
         "gate_position": gate_position,
         "estimated_load": estimated_load,
         "observations": observations,
+        "quality_warnings": quality_warnings,
         "confidence": confidence,
         "metrics": {
             "edge_density": round(edge_density, 4),
@@ -75,6 +85,7 @@ def analyze_runner_image(image_bytes: bytes) -> RunnerImageAnalysis:
             "thin_line_score": round(thin_line_score, 4),
             "high_brightness_ratio": round(high_brightness_ratio, 4),
             "low_saturation_ratio": round(low_saturation_ratio, 4),
+            "high_saturation_ratio": round(high_saturation_ratio, 4),
         },
         "findings": _build_findings(
             part_size=part_size,
@@ -90,6 +101,14 @@ def analyze_runner_image(image_bytes: bytes) -> RunnerImageAnalysis:
 
 def analysis_findings_dataframe_rows(analysis: RunnerImageAnalysis) -> list[dict[str, str]]:
     rows = list(analysis["findings"])
+    for warning in analysis["quality_warnings"]:
+        rows.append(
+            {
+                "項目": "解析品質注意",
+                "推定": "要確認",
+                "理由": warning,
+            }
+        )
     rows.append(
         {
             "項目": "推定信頼度",
@@ -98,6 +117,230 @@ def analysis_findings_dataframe_rows(analysis: RunnerImageAnalysis) -> list[dict
         }
     )
     return rows
+
+
+def render_runner_detection_overlay(image_bytes: bytes, analysis: RunnerImageAnalysis | None = None) -> bytes:
+    """Return a PNG preview with heuristic risk-candidate boxes drawn over the image."""
+
+    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    preview = image.copy()
+    preview.thumbnail((900, 650))
+    draw = ImageDraw.Draw(preview)
+    width, height = preview.size
+    current_analysis = analysis or analyze_runner_image(image_bytes)
+    observations = set(current_analysis["observations"])
+
+    boxes = _overlay_boxes(preview, observations, str(current_analysis["gate_position"]))
+    for box in boxes:
+        _draw_labeled_box(draw, box)
+
+    output = BytesIO()
+    preview.save(output, format="PNG")
+    return output.getvalue()
+
+
+def _overlay_boxes(
+    image: Image.Image,
+    observations: set[str],
+    gate_position: str,
+) -> list[dict[str, int | str]]:
+    width, height = image.size
+    regions = _image_candidate_regions(image)
+    boxes: list[dict[str, int | str]] = []
+    if "visible_gate_mark" in observations or gate_position == "front":
+        region = _select_gate_region(regions, width, height, gate_position)
+        boxes.append(
+            {
+                "x1": region["x1"],
+                "y1": region["y1"],
+                "x2": region["x2"],
+                "y2": region["y2"],
+                "label": "gate",
+                "color": "red",
+            }
+        )
+    if "many_gate_points" in observations or "small_part" in observations:
+        for region in regions[:2] or [_fallback_region(width, height)]:
+            boxes.append(
+                {
+                    "x1": region["x1"],
+                    "y1": region["y1"],
+                    "x2": region["x2"],
+                    "y2": region["y2"],
+                    "label": "small parts",
+                    "color": "orange",
+                }
+            )
+    if "thin_or_fragile" in observations or "tip_gate" in observations:
+        region = _select_thin_region(regions, width, height)
+        boxes.append(
+            {
+                "x1": region["x1"],
+                "y1": region["y1"],
+                "x2": region["x2"],
+                "y2": region["y2"],
+                "label": "thin area",
+                "color": "red",
+            }
+        )
+    if not boxes:
+        boxes.append(
+            {
+                "x1": int(width * 0.18),
+                "y1": int(height * 0.18),
+                "x2": int(width * 0.82),
+                "y2": int(height * 0.82),
+                "label": "low risk",
+                "color": "green",
+            }
+        )
+    return boxes
+
+
+def _image_candidate_regions(image: Image.Image, *, grid_size: int = 24) -> list[dict[str, int | float]]:
+    """Find image-specific high-edge regions that can be used as visual candidates."""
+
+    width, height = image.size
+    brightness = [_brightness(pixel) for pixel in image.getdata()]
+    edge_mask = _edge_mask(brightness, width, height)
+    scores = _cell_edge_scores(edge_mask, width, height, grid_size=grid_size)
+    return _candidate_regions_from_scores(scores, width, height, max_regions=5)
+
+
+def _cell_edge_scores(edge_mask: list[bool], width: int, height: int, *, grid_size: int) -> list[list[float]]:
+    counts: list[list[int]] = [[0 for _ in range(grid_size)] for _ in range(grid_size)]
+    totals: list[list[int]] = [[0 for _ in range(grid_size)] for _ in range(grid_size)]
+    for y in range(height):
+        cell_y = min(grid_size - 1, int(y * grid_size / max(1, height)))
+        for x in range(width):
+            cell_x = min(grid_size - 1, int(x * grid_size / max(1, width)))
+            totals[cell_y][cell_x] += 1
+            if edge_mask[y * width + x]:
+                counts[cell_y][cell_x] += 1
+    return [
+        [counts[y][x] / max(1, totals[y][x]) for x in range(grid_size)]
+        for y in range(grid_size)
+    ]
+
+
+def _candidate_regions_from_scores(
+    scores: list[list[float]],
+    width: int,
+    height: int,
+    *,
+    max_regions: int,
+) -> list[dict[str, int | float]]:
+    grid_size = len(scores)
+    flat_scores = [score for row in scores for score in row]
+    sorted_scores = sorted(flat_scores)
+    percentile_index = int(len(sorted_scores) * 0.82)
+    threshold = max(0.035, sorted_scores[min(percentile_index, len(sorted_scores) - 1)])
+    cells: list[tuple[int, int, float]] = [
+        (x, y, scores[y][x])
+        for y in range(grid_size)
+        for x in range(grid_size)
+        if scores[y][x] >= threshold
+    ]
+    cells.sort(key=lambda item: item[2], reverse=True)
+
+    regions: list[dict[str, int | float]] = []
+    cell_width = width / grid_size
+    cell_height = height / grid_size
+    for cell_x, cell_y, score in cells:
+        center_x = int((cell_x + 0.5) * cell_width)
+        center_y = int((cell_y + 0.5) * cell_height)
+        if any(abs(center_x - int(region["cx"])) < width * 0.18 and abs(center_y - int(region["cy"])) < height * 0.18 for region in regions):
+            continue
+
+        box_width = int(max(width * 0.16, cell_width * 4.5))
+        box_height = int(max(height * 0.16, cell_height * 4.5))
+        regions.append(
+            {
+                "x1": max(0, center_x - box_width // 2),
+                "y1": max(0, center_y - box_height // 2),
+                "x2": min(width - 1, center_x + box_width // 2),
+                "y2": min(height - 1, center_y + box_height // 2),
+                "cx": center_x,
+                "cy": center_y,
+                "score": score,
+            }
+        )
+        if len(regions) >= max_regions:
+            break
+
+    return regions
+
+
+def _select_gate_region(
+    regions: list[dict[str, int | float]],
+    width: int,
+    height: int,
+    gate_position: str,
+) -> dict[str, int | float]:
+    if not regions:
+        return _fallback_region(width, height)
+    center_x = width / 2
+    center_y = height / 2
+    if gate_position == "front":
+        return min(
+            regions,
+            key=lambda region: abs(float(region["cx"]) - center_x) + abs(float(region["cy"]) - center_y),
+        )
+    if gate_position in {"side", "tip"}:
+        return min(
+            regions,
+            key=lambda region: min(
+                float(region["cx"]),
+                abs(width - float(region["cx"])),
+                float(region["cy"]),
+                abs(height - float(region["cy"])),
+            ),
+        )
+    return max(regions, key=lambda region: float(region["score"]))
+
+
+def _select_thin_region(
+    regions: list[dict[str, int | float]],
+    width: int,
+    height: int,
+) -> dict[str, int | float]:
+    if not regions:
+        return _fallback_region(width, height)
+    return max(
+        regions,
+        key=lambda region: (
+            abs((float(region["x2"]) - float(region["x1"])) - (float(region["y2"]) - float(region["y1"]))),
+            float(region["score"]),
+        ),
+    )
+
+
+def _fallback_region(width: int, height: int) -> dict[str, int | float]:
+    return {
+        "x1": int(width * 0.22),
+        "y1": int(height * 0.22),
+        "x2": int(width * 0.78),
+        "y2": int(height * 0.78),
+        "cx": int(width * 0.5),
+        "cy": int(height * 0.5),
+        "score": 0.0,
+    }
+
+
+def _draw_labeled_box(draw: ImageDraw.ImageDraw, box: dict[str, int | str]) -> None:
+    color_name = str(box["color"])
+    color = {"red": (230, 45, 45), "orange": (245, 158, 11), "green": (34, 197, 94)}.get(color_name, (230, 45, 45))
+    x1 = int(box["x1"])
+    y1 = int(box["y1"])
+    x2 = int(box["x2"])
+    y2 = int(box["y2"])
+    label = str(box["label"])
+    for offset in range(3):
+        draw.rectangle((x1 - offset, y1 - offset, x2 + offset, y2 + offset), outline=color)
+    label_width = min(x2 - x1, max(72, len(label) * 8))
+    label_box = (x1, max(0, y1 - 18), x1 + label_width, y1)
+    draw.rectangle(label_box, fill=(20, 20, 20))
+    draw.text((x1 + 4, max(0, y1 - 16)), label, fill=(255, 255, 255))
 
 
 def _brightness(pixel: tuple[int, int, int]) -> int:
@@ -264,6 +507,26 @@ def _infer_material_type(high_brightness_ratio: float, low_saturation_ratio: flo
     if high_brightness_ratio >= 0.45 and low_saturation_ratio >= 0.45:
         return "soft_plastic"
     return "PS"
+
+
+def _infer_quality_warnings(
+    *,
+    edge_density: float,
+    component_count: int,
+    high_brightness_ratio: float,
+    low_saturation_ratio: float,
+    high_saturation_ratio: float,
+) -> list[str]:
+    warnings: list[str] = []
+    if high_saturation_ratio >= 0.025 and low_saturation_ratio >= 0.35 and edge_density >= 0.04:
+        warnings.append("シール、ラベル、説明書など色の強い印刷物が写り込み、ゲート候補として誤検出される可能性があります。")
+    if component_count >= 6 and edge_density >= 0.08:
+        warnings.append("複数ランナー、箱、背景物が混在している可能性があります。単体ランナーをトリミングすると精度が上がります。")
+    if high_brightness_ratio >= 0.35 and edge_density >= 0.045:
+        warnings.append("透明袋や強い反射が写っている可能性があります。袋から出すか、反射の少ない角度で撮影してください。")
+    if low_saturation_ratio >= 0.85 and edge_density >= 0.055:
+        warnings.append("透明パーツ、白いシール、台紙、袋反射の輪郭が混ざっている可能性があります。対象ランナーだけを切り出して確認してください。")
+    return warnings
 
 
 def _infer_part_area(observations: list[str]) -> str:

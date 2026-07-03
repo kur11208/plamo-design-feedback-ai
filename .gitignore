@@ -6,6 +6,7 @@ __pycache__/
 outputs/improvement_report.md
 outputs/image_based_analysis.md
 outputs/local_runner_evaluation.md
+outputs/local_*.png
 outputs/*.log
 
 # Local-only images for private evaluation.

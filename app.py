@@ -24,6 +24,7 @@ from image_based_analyzer import (
 from image_recognizer import (
     analysis_findings_dataframe_rows,
     analyze_runner_image,
+    render_runner_detection_overlay,
 )
 from llm_adapter import (
     DEFAULT_LOCAL_LLM_ENDPOINT,
@@ -757,6 +758,11 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
                 image_analysis = analyze_runner_image(uploaded_image_bytes)
             except OSError as error:
                 st.warning(f"自動画像認識に失敗しました。手動入力で評価できます: {error}")
+            else:
+                for warning in image_analysis["quality_warnings"]:
+                    st.warning(f"解析品質注意: {warning}")
+                overlay_bytes = render_runner_detection_overlay(uploaded_image_bytes, image_analysis)
+                st.image(overlay_bytes, caption="自動認識候補オーバーレイ（赤/黄枠は確認候補。保存しません）")
         elif RUNNER_IMAGE_PATH.exists():
             st.image(str(RUNNER_IMAGE_PATH), caption="サンプルランナー画像")
         else:
