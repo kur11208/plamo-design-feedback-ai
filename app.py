@@ -21,6 +21,10 @@ from improvement_generator import (
 from image_based_analyzer import (
     build_image_based_findings,
 )
+from image_recognizer import (
+    analysis_findings_dataframe_rows,
+    analyze_runner_image,
+)
 from llm_adapter import (
     DEFAULT_LOCAL_LLM_ENDPOINT,
     DEFAULT_LOCAL_LLM_MODEL,
@@ -725,7 +729,7 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
     st.caption(
         "ランナー写真や模式図を入力し、画像から読み取った部品特徴を指定すると、"
         "切り出し前の破損・ゲート跡・小型部品リスクを評価します。"
-        "このMVPは画像そのものの自動認識ではなく、画像を見て指定した特徴をルールベースで評価する設計です。"
+        "このMVPでは軽量な画像ヒューリスティックで特徴候補を自動提案し、人が確認・修正できる設計です。"
     )
     st.info(
         "公開デモとGitHub同梱データは架空ランナーのみを使用します。"
@@ -734,6 +738,8 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
     )
 
     uploaded_runner_image = None
+    uploaded_image_bytes = None
+    image_analysis = None
     image_reference = "assets/runner_sample.png"
     input_col, result_col = st.columns([0.9, 1.1])
     with input_col:
@@ -743,34 +749,72 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
             key="runner_image_input",
         )
         if uploaded_runner_image is not None:
+            uploaded_image_bytes = uploaded_runner_image.getvalue()
             image_reference = "local_uploaded_image"
             st.success("ローカル検証モード: この画像はアプリ内表示だけに使い、レポートやGitには保存しません。")
-            st.image(uploaded_runner_image, caption="ローカル入力画像（保存しません）")
+            st.image(uploaded_image_bytes, caption="ローカル入力画像（保存しません）")
+            try:
+                image_analysis = analyze_runner_image(uploaded_image_bytes)
+            except OSError as error:
+                st.warning(f"自動画像認識に失敗しました。手動入力で評価できます: {error}")
         elif RUNNER_IMAGE_PATH.exists():
             st.image(str(RUNNER_IMAGE_PATH), caption="サンプルランナー画像")
         else:
             st.info("画像が未入力です。画像なしでも、部品特徴データだけで評価できます。")
 
+        if image_analysis is not None:
+            st.markdown("**自動画像認識（軽量CV）の候補**")
+            st.caption("画像のエッジ密度、小領域候補、中央/外周分布から候補を出しています。最終判断は下の入力欄で修正できます。")
+            st.dataframe(pd.DataFrame(analysis_findings_dataframe_rows(image_analysis)), width="stretch", hide_index=True)
+
+        suggested_part_area = str(image_analysis["part_area"]) if image_analysis else "antenna"
+        suggested_part_size = str(image_analysis["part_size"]) if image_analysis else "small"
+        suggested_material_type = str(image_analysis["material_type"]) if image_analysis else "PS"
+        suggested_gate_position = str(image_analysis["gate_position"]) if image_analysis else "tip"
+        suggested_estimated_load = str(image_analysis["estimated_load"]) if image_analysis else "medium"
+
         st.markdown("**画像から読んだ特徴**")
-        st.caption("画像を見て確認できた特徴だけを選びます。現MVPでは自動画像認識ではなく、人が読んだ特徴を構造化します。")
+        st.caption("自動推定された特徴を確認し、必要に応じて修正します。")
         part_area = st.selectbox(
             "評価対象",
             RUNNER_EVALUATION_PARTS,
+            index=_option_index(RUNNER_EVALUATION_PARTS, suggested_part_area, default=0),
             format_func=_part_area_label,
         )
         feature_cols = st.columns(2)
         with feature_cols[0]:
-            part_size = st.selectbox("部品サイズ", FEATURE_OPTIONS["part_size"], index=0)
-            gate_position = st.selectbox("ゲート位置", FEATURE_OPTIONS["gate_position"], index=4)
-            material_type = st.selectbox("材料想定", FEATURE_OPTIONS["material_type"], index=0)
+            part_size = st.selectbox(
+                "部品サイズ",
+                FEATURE_OPTIONS["part_size"],
+                index=_option_index(FEATURE_OPTIONS["part_size"], suggested_part_size, default=0),
+            )
+            gate_position = st.selectbox(
+                "ゲート位置",
+                FEATURE_OPTIONS["gate_position"],
+                index=_option_index(FEATURE_OPTIONS["gate_position"], suggested_gate_position, default=4),
+            )
+            material_type = st.selectbox(
+                "材料想定",
+                FEATURE_OPTIONS["material_type"],
+                index=_option_index(FEATURE_OPTIONS["material_type"], suggested_material_type, default=0),
+            )
         with feature_cols[1]:
-            estimated_load = st.selectbox("切り出し時の負荷", FEATURE_OPTIONS["estimated_load"], index=1)
+            estimated_load = st.selectbox(
+                "切り出し時の負荷",
+                FEATURE_OPTIONS["estimated_load"],
+                index=_option_index(FEATURE_OPTIONS["estimated_load"], suggested_estimated_load, default=1),
+            )
             assembly_step = st.text_input("関連工程", value="runner_check")
 
+        default_observations = (
+            [value for value in image_analysis["observations"] if value in RUNNER_OBSERVATION_OPTIONS]
+            if image_analysis is not None
+            else _default_runner_observations(part_area)
+        )
         observations = st.multiselect(
             "画像・データから読み取れた特徴",
             list(RUNNER_OBSERVATION_OPTIONS),
-            default=_default_runner_observations(part_area),
+            default=default_observations,
             format_func=lambda value: RUNNER_OBSERVATION_OPTIONS[value],
         )
 
@@ -959,6 +1003,13 @@ def _default_runner_observations(part_area: str) -> list[str]:
         "instruction_step": ["manual_unclear"],
     }
     return defaults.get(part_area, ["looks_safe"])
+
+
+def _option_index(options: tuple[str, ...], value: str, *, default: int) -> int:
+    try:
+        return options.index(value)
+    except ValueError:
+        return default
 
 
 def build_runner_input_report(record: FeedbackRecord, image_reference: str) -> str:
