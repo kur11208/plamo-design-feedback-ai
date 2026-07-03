@@ -11,6 +11,8 @@ from app import (
     build_runner_image_report,
     build_runner_input_record,
     build_runner_input_report,
+    most_impactful_issue_category,
+    primary_issue_category,
 )
 from improvement_generator import build_improvement_report, generate_actionable_fix_plan
 
@@ -85,6 +87,49 @@ class AppDataflowTest(unittest.TestCase):
         self.assertIn("gate_mark", record["issue_categories"])
         self.assertGreaterEqual(record["risk_score"], 70)
         self.assertGreaterEqual(len(generate_actionable_fix_plan(record)), 1)
+
+    def test_primary_issue_uses_largest_score_contribution(self) -> None:
+        record = build_runner_input_record(
+            part_area="gate_area",
+            part_size="small",
+            material_type="PS",
+            gate_position="front",
+            estimated_load="medium",
+            assembly_step="local_image_check",
+            observations=["visible_gate_mark", "many_gate_points", "small_part"],
+        )
+
+        self.assertEqual(primary_issue_category(record), "small_parts")
+
+    def test_safe_observation_does_not_cancel_detected_runner_risk(self) -> None:
+        record = build_runner_input_record(
+            part_area="gate_area",
+            part_size="medium",
+            material_type="PS",
+            gate_position="front",
+            estimated_load="medium",
+            assembly_step="local_image_check",
+            observations=["looks_safe", "visible_gate_mark"],
+        )
+
+        self.assertIn("gate_mark", record["issue_categories"])
+        self.assertNotIn("satisfaction_positive", record["issue_categories"])
+        self.assertGreaterEqual(record["risk_score"], 30)
+
+    def test_priority_main_issue_uses_score_impact_not_category_order(self) -> None:
+        records = [
+            build_runner_input_record(
+                part_area="gate_area",
+                part_size="small",
+                material_type="PS",
+                gate_position="front",
+                estimated_load="medium",
+                assembly_step="local_image_check",
+                observations=["visible_gate_mark", "many_gate_points", "small_part"],
+            )
+        ]
+
+        self.assertEqual(most_impactful_issue_category(records), "small_parts")
 
     def test_runner_input_report_masks_local_image_name(self) -> None:
         record = build_runner_input_record(

@@ -381,6 +381,8 @@ def build_result_dataframe(records: list[FeedbackRecord]) -> pd.DataFrame:
                 "created_at": record["created_at"],
                 "issue_categories": ", ".join(record["issue_categories"]),
                 "issue_categories_label": "、".join(_issue_category_label(category) for category in record["issue_categories"]),
+                "primary_issue_category": primary_issue_category(record),
+                "primary_issue_category_label": _issue_category_label(primary_issue_category(record)),
                 "detected_parts": ", ".join(record["detected_parts"]),
                 "severity": record["severity"],
                 "risk_score": record["risk_score"],
@@ -520,8 +522,8 @@ def build_priority_ranking_dataframe(records: list[FeedbackRecord]) -> pd.DataFr
                 "feedback_count": len(part_records),
                 "average_risk_score": round(average_score, 1),
                 "max_risk_score": max_score,
-                "main_issue_category": most_common_issue_category(part_records),
-                "main_issue_category_label": _issue_category_label(most_common_issue_category(part_records)),
+                "main_issue_category": most_impactful_issue_category(part_records),
+                "main_issue_category_label": _issue_category_label(most_impactful_issue_category(part_records)),
                 "priority_level": priority_level(average_score, max_score),
             }
         )
@@ -548,6 +550,53 @@ def most_common_issue_category(records: list[FeedbackRecord]) -> str:
     if not counts:
         return "-"
     return max(counts.items(), key=lambda item: (item[1], item[0]))[0]
+
+
+def primary_issue_category(record: FeedbackRecord) -> str:
+    """Return the issue category that contributed most to this record's risk score."""
+
+    issue_categories = [str(category) for category in record.get("issue_categories", [])]
+    breakdown = record.get("risk_explanation", {}).get("breakdown", [])
+    category_points: dict[str, int] = {}
+    for item in breakdown:
+        if item.get("factor_type") != "issue_category":
+            continue
+        category = str(item.get("factor", ""))
+        points = int(item.get("points", 0))
+        if points > 0:
+            category_points[category] = category_points.get(category, 0) + points
+
+    if category_points:
+        order = {category: index for index, category in enumerate(issue_categories)}
+        return max(
+            category_points.items(),
+            key=lambda item: (item[1], -order.get(item[0], len(issue_categories))),
+        )[0]
+    return issue_categories[0] if issue_categories else "-"
+
+
+def most_impactful_issue_category(records: list[FeedbackRecord]) -> str:
+    """Return the issue category with the largest total score contribution."""
+
+    category_points: dict[str, int] = {}
+    category_counts: dict[str, int] = {}
+    for record in records:
+        for category in record.get("issue_categories", []):
+            category_counts[str(category)] = category_counts.get(str(category), 0) + 1
+        for item in record.get("risk_explanation", {}).get("breakdown", []):
+            if item.get("factor_type") != "issue_category":
+                continue
+            category = str(item.get("factor", ""))
+            points = int(item.get("points", 0))
+            if points > 0:
+                category_points[category] = category_points.get(category, 0) + points
+
+    if category_points:
+        return max(
+            category_points.items(),
+            key=lambda item: (item[1], category_counts.get(item[0], 0), item[0]),
+        )[0]
+    return most_common_issue_category(records)
 
 
 def summarize_score_factors(record: FeedbackRecord) -> str:
@@ -742,7 +791,7 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
         metric_cols = st.columns(3)
         metric_cols[0].metric("risk_score", int(runner_record["risk_score"]))
         metric_cols[1].metric("risk_level", risk_level(int(runner_record["risk_score"])))
-        metric_cols[2].metric("主要カテゴリ", _issue_category_label(runner_record["issue_categories"][0]))
+        metric_cols[2].metric("主要カテゴリ", _issue_category_label(primary_issue_category(runner_record)))
 
         st.markdown("**入力から生成した評価コメント**")
         st.info(runner_record["feedback_text"])
@@ -847,6 +896,10 @@ def _runner_input_issue_categories(
         categories.update({"instruction_unclear", "assembly_difficulty"})
     if not categories:
         categories.add("other")
+    risk_categories = categories - {"satisfaction_positive", "other"}
+    if risk_categories:
+        categories.discard("satisfaction_positive")
+        categories.discard("other")
     ordered_categories = [category for category in ISSUE_CATEGORY_LABELS if category in categories]
     return ordered_categories or ["other"]
 
@@ -926,7 +979,7 @@ def build_runner_input_report(record: FeedbackRecord, image_reference: str) -> s
         f"- target_part: `{_part_area_label(str(record['part_area']))}`",
         f"- risk_score: `{record['risk_score']}`",
         f"- risk_level: `{risk_level(int(record['risk_score']))}`",
-        f"- main_issue: `{_issue_category_label(str(record['issue_categories'][0]))}`",
+        f"- main_issue: `{_issue_category_label(primary_issue_category(record))}`",
         "",
         "## 入力から生成した評価コメント",
         "",
