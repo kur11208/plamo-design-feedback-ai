@@ -25,6 +25,8 @@ private_assets/
 
 この切り分けにより、公開ポートフォリオでは権利・商標・機密に配慮しつつ、ローカルでは実画像入力を想定したUIと評価フローを確認できます。
 
+ローカル実画像で検証する場合も、アプリは画像ファイル名や画像本体をMarkdownレポートに保存しません。保存レポート上では `local_uploaded_image` として扱います。
+
 ## このポートフォリオで示すこと
 
 - 単なる感情分析ではなく、ユーザーの声と部品特徴を結びつけて改善優先度を出すこと
@@ -174,6 +176,7 @@ $env:LOCAL_LLM_TIMEOUT="60"
 - Markdown形式の改善案レポート生成
 - `outputs/improvement_report.md` への保存
 - `outputs/image_based_analysis.md` への保存
+- ローカル入力画像の評価結果を、画像名なしで `outputs/local_runner_evaluation.md` に保存
 - `unittest` による分類、スコアリング、データフローのテスト
 
 ## 使用技術
@@ -242,6 +245,7 @@ plamo-design-feedback-ai/
     .gitkeep
     image_based_analysis.md  # アプリ操作で生成
     improvement_report.md    # アプリ操作で生成
+    local_runner_evaluation.md # ローカル画像評価。画像名・画像本体は保存しない
   docs/
     concept.md
     scoring_policy.md
@@ -280,6 +284,20 @@ streamlit run app.py
 ```
 
 ブラウザでStreamlitのURLを開くと、最初にランナー画像・特徴データ入力評価が表示されます。サンプルCSVと全件分析結果は、根拠データとして折りたたみ内で確認できます。
+
+### ローカル実画像で検証する場合
+
+公開しない検証画像は `local_inputs/` または `private_assets/` に置きます。
+
+```powershell
+mkdir local_inputs
+# 例: local_inputs\your_runner_photo.jpg に自分で用意した検証画像を置く
+streamlit run app.py
+```
+
+アプリ上で画像をアップロードすると「ローカル検証モード」として表示されます。画像を見て、対象部位、部品サイズ、ゲート位置、材料、切り出し時の負荷、読み取れた特徴を選ぶと、リスクスコア、判定理由、具体的な変更案、推定原因が返ります。
+
+`outputs/local_runner_evaluation.md` に保存できるのは評価結果だけです。実画像のファイル名、画像本体、元パスは保存しません。
 
 ## Streamlit Community Cloudで公開する場合
 

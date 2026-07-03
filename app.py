@@ -41,6 +41,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_PATH = BASE_DIR / "data" / "sample_feedback.csv"
 OUTPUT_PATH = BASE_DIR / "outputs" / "improvement_report.md"
 IMAGE_ANALYSIS_OUTPUT_PATH = BASE_DIR / "outputs" / "image_based_analysis.md"
+LOCAL_RUNNER_EVALUATION_OUTPUT_PATH = BASE_DIR / "outputs" / "local_runner_evaluation.md"
 RUNNER_IMAGE_PATH = BASE_DIR / "assets" / "runner_sample.png"
 REQUIRED_COLUMNS = {
     "feedback_id",
@@ -682,6 +683,8 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
         "このアップロード欄から選択してください。これらのローカル画像はGit管理対象外です。"
     )
 
+    uploaded_runner_image = None
+    image_reference = "assets/runner_sample.png"
     input_col, result_col = st.columns([0.9, 1.1])
     with input_col:
         uploaded_runner_image = st.file_uploader(
@@ -690,12 +693,16 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
             key="runner_image_input",
         )
         if uploaded_runner_image is not None:
-            st.image(uploaded_runner_image, caption="入力ランナー画像")
+            image_reference = "local_uploaded_image"
+            st.success("ローカル検証モード: この画像はアプリ内表示だけに使い、レポートやGitには保存しません。")
+            st.image(uploaded_runner_image, caption="ローカル入力画像（保存しません）")
         elif RUNNER_IMAGE_PATH.exists():
             st.image(str(RUNNER_IMAGE_PATH), caption="サンプルランナー画像")
         else:
             st.info("画像が未入力です。画像なしでも、部品特徴データだけで評価できます。")
 
+        st.markdown("**画像から読んだ特徴**")
+        st.caption("画像を見て確認できた特徴だけを選びます。現MVPでは自動画像認識ではなく、人が読んだ特徴を構造化します。")
         part_area = st.selectbox(
             "評価対象",
             RUNNER_EVALUATION_PARTS,
@@ -748,6 +755,20 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
         st.markdown("**推定原因**")
         for cause in runner_record["cause_candidates"]:
             st.markdown(f"- {cause}")
+
+        local_report_markdown = build_runner_input_report(runner_record, image_reference=image_reference)
+        with st.expander("ローカル入力評価レポート", expanded=False):
+            st.markdown(local_report_markdown)
+        if st.button("outputs/local_runner_evaluation.md に保存", key="save_local_runner_evaluation"):
+            try:
+                save_report(local_report_markdown, LOCAL_RUNNER_EVALUATION_OUTPUT_PATH)
+            except OSError as error:
+                st.error(f"ローカル入力評価レポートの保存に失敗しました: {error}")
+            else:
+                st.success(
+                    f"保存しました: {LOCAL_RUNNER_EVALUATION_OUTPUT_PATH}。"
+                    "アップロード画像のファイル名や画像本体は保存していません。"
+                )
 
 
 def build_runner_input_record(
@@ -884,6 +905,82 @@ def _default_runner_observations(part_area: str) -> list[str]:
         "instruction_step": ["manual_unclear"],
     }
     return defaults.get(part_area, ["looks_safe"])
+
+
+def build_runner_input_report(record: FeedbackRecord, image_reference: str) -> str:
+    """Build a markdown report for one runner-input evaluation without storing private image names."""
+
+    fix_plan_df = build_actionable_fix_plan_dataframe(record)
+    breakdown_df = build_score_breakdown_dataframe(record)
+    image_note = (
+        "ローカルアップロード画像です。画像ファイル名、画像本体、元パスは保存していません。"
+        if image_reference == "local_uploaded_image"
+        else "公開デモ用の架空ランナー画像です。"
+    )
+    lines = [
+        "# ランナー入力評価レポート",
+        "",
+        f"- image_reference: `{image_reference}`",
+        f"- image_handling: {image_note}",
+        f"- target_part: `{_part_area_label(str(record['part_area']))}`",
+        f"- risk_score: `{record['risk_score']}`",
+        f"- risk_level: `{risk_level(int(record['risk_score']))}`",
+        f"- main_issue: `{_issue_category_label(str(record['issue_categories'][0]))}`",
+        "",
+        "## 入力から生成した評価コメント",
+        "",
+        str(record["feedback_text"]),
+        "",
+        "## リスク判定理由",
+        "",
+        "| 種別 | 表示名 | 加点 | 根拠 |",
+        "| --- | --- | ---: | --- |",
+    ]
+    for row in breakdown_df.to_dict("records"):
+        lines.append(
+            "| "
+            f"{row.get('種別', '')} | "
+            f"{row.get('表示名', row.get('要因', ''))} | "
+            f"{row.get('加点', '')} | "
+            f"{row.get('根拠', '')} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 具体的な変更案",
+            "",
+            "| 観点 | 変更対象 | 変更内容 | 期待効果 | 検証方法 |",
+            "| --- | --- | --- | --- | --- |",
+        ]
+    )
+    for row in fix_plan_df.to_dict("records"):
+        lines.append(
+            "| "
+            f"{row.get('観点', '')} | "
+            f"{row.get('変更対象', '')} | "
+            f"{row.get('変更内容', '')} | "
+            f"{row.get('期待効果', '')} | "
+            f"{row.get('検証方法', '')} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## 推定原因",
+            "",
+        ]
+    )
+    for cause in record["cause_candidates"]:
+        lines.append(f"- {cause}")
+    lines.extend(
+        [
+            "",
+            "## 公開時の扱い",
+            "",
+            "- GitHub、README、公開Streamlitデモには、実画像や実画像ファイル名を含めません。",
+            "- 公開サンプルには架空ランナー画像と架空データのみを使います。",
+        ]
+    )
+    return "\n".join(lines) + "\n"
 
 
 def render_image_based_analysis(records: list[FeedbackRecord]) -> None:

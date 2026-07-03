@@ -5,6 +5,7 @@ __pycache__/
 .streamlit/
 outputs/improvement_report.md
 outputs/image_based_analysis.md
+outputs/local_runner_evaluation.md
 outputs/*.log
 
 # Local-only images for private evaluation.

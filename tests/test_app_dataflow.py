@@ -10,6 +10,7 @@ from app import (
     build_result_dataframe,
     build_runner_image_report,
     build_runner_input_record,
+    build_runner_input_report,
 )
 from improvement_generator import build_improvement_report, generate_actionable_fix_plan
 
@@ -84,6 +85,26 @@ class AppDataflowTest(unittest.TestCase):
         self.assertIn("gate_mark", record["issue_categories"])
         self.assertGreaterEqual(record["risk_score"], 70)
         self.assertGreaterEqual(len(generate_actionable_fix_plan(record)), 1)
+
+    def test_runner_input_report_masks_local_image_name(self) -> None:
+        record = build_runner_input_record(
+            part_area="antenna",
+            part_size="small",
+            material_type="PS",
+            gate_position="tip",
+            estimated_load="high",
+            assembly_step="runner_check",
+            observations=["thin_or_fragile", "tip_gate"],
+        )
+
+        report = build_runner_input_report(record, image_reference="local_uploaded_image")
+
+        self.assertIn("ランナー入力評価レポート", report)
+        self.assertIn("local_uploaded_image", report)
+        self.assertIn("画像ファイル名、画像本体、元パスは保存していません", report)
+        self.assertIn("| 観点 | 変更対象 | 変更内容 | 期待効果 | 検証方法 |", report)
+        self.assertNotIn("example.jpg", report)
+        self.assertNotIn("local_inputs/", report)
 
     def test_runner_image_report_is_runner_focused(self) -> None:
         records = analyze_feedback_dataframe(self.feedback_df)
