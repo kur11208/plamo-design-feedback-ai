@@ -576,6 +576,7 @@ def build_score_breakdown_dataframe(record: FeedbackRecord) -> pd.DataFrame:
         {
             "種別": "total",
             "要因": "risk_score",
+            "表示名": "最終スコア",
             "加点": record.get("risk_score", 0),
             "根拠": "0から100に丸めた最終スコア",
         }
