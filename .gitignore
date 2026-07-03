@@ -6,3 +6,10 @@ __pycache__/
 outputs/improvement_report.md
 outputs/image_based_analysis.md
 outputs/*.log
+
+# Local-only images for private evaluation.
+# Keep real product photos, rights-managed photos, and prototype photos out of GitHub.
+local_inputs/*
+!local_inputs/README.md
+private_assets/*
+!private_assets/README.md

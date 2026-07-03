@@ -8,6 +8,23 @@
 >
 > 本プロジェクトは、公式データは使用していない学習用プロトタイプです。実在する企業・商品・キャラクター・公式画像・公式デザイン・実際の金型データは使用していません。
 
+## 公開デモとローカル検証の切り分け
+
+GitHub、README、公開Streamlitデモ、同梱スクリーンショットでは、架空ランナー画像と架空データだけを使います。
+
+一方で、ローカル環境では、権利処理済み画像、自分で撮影した検証用写真、試作サンプル写真などをアップロードして同じ評価フローを試せます。公開しない画像は `local_inputs/` または `private_assets/` に置いてください。これらのディレクトリ内の画像ファイルはGit管理対象外です。
+
+```text
+assets/
+  runner_sample.png        # 架空ランナー。GitHub掲載用
+local_inputs/
+  your_runner_photo.jpg    # ローカル検証用。GitHubには載せない
+private_assets/
+  prototype_photo.png      # 非公開検証用。GitHubには載せない
+```
+
+この切り分けにより、公開ポートフォリオでは権利・商標・機密に配慮しつつ、ローカルでは実画像入力を想定したUIと評価フローを確認できます。
+
 ## このポートフォリオで示すこと
 
 - 単なる感情分析ではなく、ユーザーの声と部品特徴を結びつけて改善優先度を出すこと
@@ -215,6 +232,10 @@ plamo-design-feedback-ai/
   assets/
     runner_bg_realistic.png
     runner_sample.png
+  local_inputs/
+    README.md              # ローカル検証用画像置き場。画像ファイルはGit管理外
+  private_assets/
+    README.md              # 非公開検証用アセット置き場。画像ファイルはGit管理外
   data/
     sample_feedback.csv
   outputs/
@@ -318,3 +339,5 @@ python scripts\generate_portfolio_assets.py
 ## 注意事項
 
 本プロジェクトは学習・ポートフォリオ用のプロトタイプです。実在する企業・商品・キャラクター・公式データ・実際の金型データは使用していません。サンプルデータはすべて架空のものです。
+
+実在商品の写真や権利処理が必要な画像をローカル検証に使う場合でも、GitHub、README、公開Streamlitデモ、公開スクリーンショットには含めない運用を前提にしています。

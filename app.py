@@ -676,11 +676,16 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
         "切り出し前の破損・ゲート跡・小型部品リスクを評価します。"
         "このMVPは画像そのものの自動認識ではなく、画像を見て指定した特徴をルールベースで評価する設計です。"
     )
+    st.info(
+        "公開デモとGitHub同梱データは架空ランナーのみを使用します。"
+        "実在商品の写真や権利処理が必要な画像で試す場合は、ローカル環境の `local_inputs/` や `private_assets/` に置き、"
+        "このアップロード欄から選択してください。これらのローカル画像はGit管理対象外です。"
+    )
 
     input_col, result_col = st.columns([0.9, 1.1])
     with input_col:
         uploaded_runner_image = st.file_uploader(
-            "ランナー画像 / 試作写真 / 模式図を入力",
+            "ランナー画像 / 試作写真 / 模式図を入力（公開サンプルは架空画像のみ）",
             type=["png", "jpg", "jpeg", "webp"],
             key="runner_image_input",
         )
