@@ -8,6 +8,8 @@ from typing import TypedDict
 
 from PIL import Image, ImageDraw
 
+CropBoxRatio = tuple[float, float, float, float]
+
 
 class RunnerImageAnalysis(TypedDict):
     part_area: str
@@ -119,6 +121,54 @@ def analysis_findings_dataframe_rows(analysis: RunnerImageAnalysis) -> list[dict
     return rows
 
 
+def crop_runner_image(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
+    """Return a PNG containing only the selected region of interest."""
+
+    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    left, top, right, bottom = _crop_box_to_pixels(crop_box, image.width, image.height)
+    cropped = image.crop((left, top, right, bottom))
+    output = BytesIO()
+    cropped.save(output, format="PNG")
+    return output.getvalue()
+
+
+def render_roi_preview(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
+    """Return a preview image with the analysis ROI drawn on top of the original image."""
+
+    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    original_width, original_height = image.size
+    left, top, right, bottom = _crop_box_to_pixels(crop_box, original_width, original_height)
+
+    preview = image.copy()
+    preview.thumbnail((900, 650))
+    scale_x = preview.width / max(1, original_width)
+    scale_y = preview.height / max(1, original_height)
+    preview_box = (
+        int(left * scale_x),
+        int(top * scale_y),
+        int(right * scale_x),
+        int(bottom * scale_y),
+    )
+
+    draw = ImageDraw.Draw(preview)
+    for offset in range(4):
+        draw.rectangle(
+            (
+                preview_box[0] - offset,
+                preview_box[1] - offset,
+                preview_box[2] + offset,
+                preview_box[3] + offset,
+            ),
+            outline=(14, 165, 233),
+        )
+    draw.rectangle((preview_box[0], max(0, preview_box[1] - 20), preview_box[0] + 96, preview_box[1]), fill=(20, 20, 20))
+    draw.text((preview_box[0] + 4, max(0, preview_box[1] - 17)), "analysis ROI", fill=(255, 255, 255))
+
+    output = BytesIO()
+    preview.save(output, format="PNG")
+    return output.getvalue()
+
+
 def render_runner_detection_overlay(image_bytes: bytes, analysis: RunnerImageAnalysis | None = None) -> bytes:
     """Return a PNG preview with heuristic risk-candidate boxes drawn over the image."""
 
@@ -195,6 +245,29 @@ def _overlay_boxes(
             }
         )
     return boxes
+
+
+def _crop_box_to_pixels(crop_box: CropBoxRatio, width: int, height: int) -> tuple[int, int, int, int]:
+    left_ratio, top_ratio, right_ratio, bottom_ratio = crop_box
+    left_ratio = _clamp_ratio(left_ratio)
+    top_ratio = _clamp_ratio(top_ratio)
+    right_ratio = _clamp_ratio(right_ratio)
+    bottom_ratio = _clamp_ratio(bottom_ratio)
+
+    if right_ratio - left_ratio < 0.05:
+        left_ratio, right_ratio = 0.0, 1.0
+    if bottom_ratio - top_ratio < 0.05:
+        top_ratio, bottom_ratio = 0.0, 1.0
+
+    left = int(width * left_ratio)
+    top = int(height * top_ratio)
+    right = max(left + 1, int(width * right_ratio))
+    bottom = max(top + 1, int(height * bottom_ratio))
+    return left, top, min(width, right), min(height, bottom)
+
+
+def _clamp_ratio(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 def _image_candidate_regions(image: Image.Image, *, grid_size: int = 24) -> list[dict[str, int | float]]:

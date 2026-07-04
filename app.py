@@ -24,7 +24,9 @@ from image_based_analyzer import (
 from image_recognizer import (
     analysis_findings_dataframe_rows,
     analyze_runner_image,
+    crop_runner_image,
     render_runner_detection_overlay,
+    render_roi_preview,
 )
 from llm_adapter import (
     DEFAULT_LOCAL_LLM_ENDPOINT,
@@ -740,6 +742,7 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
 
     uploaded_runner_image = None
     uploaded_image_bytes = None
+    analysis_image_bytes = None
     image_analysis = None
     image_reference = "assets/runner_sample.png"
     input_col, result_col = st.columns([0.9, 1.1])
@@ -751,18 +754,41 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
         )
         if uploaded_runner_image is not None:
             uploaded_image_bytes = uploaded_runner_image.getvalue()
+            analysis_image_bytes = uploaded_image_bytes
             image_reference = "local_uploaded_image"
             st.success("ローカル検証モード: この画像はアプリ内表示だけに使い、レポートやGitには保存しません。")
             st.image(uploaded_image_bytes, caption="ローカル入力画像（保存しません）")
+
+            st.markdown("**解析範囲（ROI）**")
+            st.caption("シール、箱、説明書、背景物を避け、評価したいランナー部分だけを指定します。")
+            roi_enabled = st.checkbox("画像全体ではなく、指定範囲だけを解析する", value=True, key="runner_roi_enabled")
+            if roi_enabled:
+                roi_cols = st.columns(2)
+                with roi_cols[0]:
+                    roi_left = st.slider("左端 (%)", min_value=0, max_value=95, value=0, step=1, key="runner_roi_left")
+                    roi_top = st.slider("上端 (%)", min_value=0, max_value=95, value=0, step=1, key="runner_roi_top")
+                with roi_cols[1]:
+                    roi_right = st.slider("右端 (%)", min_value=5, max_value=100, value=100, step=1, key="runner_roi_right")
+                    roi_bottom = st.slider("下端 (%)", min_value=5, max_value=100, value=100, step=1, key="runner_roi_bottom")
+
+                if roi_left >= roi_right or roi_top >= roi_bottom:
+                    st.warning("ROIの上下左右が逆転しています。いったん画像全体を解析します。")
+                else:
+                    crop_box = (roi_left / 100, roi_top / 100, roi_right / 100, roi_bottom / 100)
+                    analysis_image_bytes = crop_runner_image(uploaded_image_bytes, crop_box)
+                    image_reference = "local_uploaded_image_roi"
+                    st.image(render_roi_preview(uploaded_image_bytes, crop_box), caption="解析範囲プレビュー（保存しません）")
+                    st.image(analysis_image_bytes, caption="解析対象ROI（保存しません）")
+
             try:
-                image_analysis = analyze_runner_image(uploaded_image_bytes)
+                image_analysis = analyze_runner_image(analysis_image_bytes)
             except OSError as error:
                 st.warning(f"自動画像認識に失敗しました。手動入力で評価できます: {error}")
             else:
                 for warning in image_analysis["quality_warnings"]:
                     st.warning(f"解析品質注意: {warning}")
-                overlay_bytes = render_runner_detection_overlay(uploaded_image_bytes, image_analysis)
-                st.image(overlay_bytes, caption="自動認識候補オーバーレイ（赤/黄枠は確認候補。保存しません）")
+                overlay_bytes = render_runner_detection_overlay(analysis_image_bytes, image_analysis)
+                st.image(overlay_bytes, caption="ROI内の自動認識候補オーバーレイ（赤/黄枠は確認候補。保存しません）")
         elif RUNNER_IMAGE_PATH.exists():
             st.image(str(RUNNER_IMAGE_PATH), caption="サンプルランナー画像")
         else:
@@ -1023,11 +1049,12 @@ def build_runner_input_report(record: FeedbackRecord, image_reference: str) -> s
 
     fix_plan_df = build_actionable_fix_plan_dataframe(record)
     breakdown_df = build_score_breakdown_dataframe(record)
-    image_note = (
-        "ローカルアップロード画像です。画像ファイル名、画像本体、元パスは保存していません。"
-        if image_reference == "local_uploaded_image"
-        else "公開デモ用の架空ランナー画像です。"
-    )
+    if image_reference == "local_uploaded_image_roi":
+        image_note = "ローカルアップロード画像の指定ROIです。画像ファイル名、画像本体、元パス、ROI画像は保存していません。"
+    elif image_reference == "local_uploaded_image":
+        image_note = "ローカルアップロード画像です。画像ファイル名、画像本体、元パスは保存していません。"
+    else:
+        image_note = "公開デモ用の架空ランナー画像です。"
     lines = [
         "# ランナー入力評価レポート",
         "",

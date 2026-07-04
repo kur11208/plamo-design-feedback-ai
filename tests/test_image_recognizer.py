@@ -5,7 +5,13 @@ import unittest
 
 from PIL import Image, ImageDraw
 
-from image_recognizer import analysis_findings_dataframe_rows, analyze_runner_image, render_runner_detection_overlay
+from image_recognizer import (
+    analysis_findings_dataframe_rows,
+    analyze_runner_image,
+    crop_runner_image,
+    render_roi_preview,
+    render_runner_detection_overlay,
+)
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -97,6 +103,35 @@ class ImageRecognizerTest(unittest.TestCase):
         )
 
         self.assertGreater(highlight_pixels, 50)
+
+    def test_roi_crop_limits_analysis_to_selected_area(self) -> None:
+        image = Image.new("RGB", (260, 160), "white")
+        draw = ImageDraw.Draw(image)
+        for x in range(20, 115, 18):
+            draw.line((x, 20, x, 140), fill="black", width=3)
+        for y in range(25, 145, 22):
+            draw.line((15, y, 120, y), fill="black", width=3)
+        image_bytes = _png_bytes(image)
+
+        left_crop = crop_runner_image(image_bytes, (0.0, 0.0, 0.46, 1.0))
+        right_crop = crop_runner_image(image_bytes, (0.55, 0.0, 1.0, 1.0))
+
+        left_analysis = analyze_runner_image(left_crop)
+        right_analysis = analyze_runner_image(right_crop)
+
+        self.assertIn("small_part", left_analysis["observations"])
+        self.assertEqual(right_analysis["observations"], ["looks_safe"])
+
+    def test_roi_preview_draws_analysis_region(self) -> None:
+        image = Image.new("RGB", (240, 180), "white")
+        preview = Image.open(BytesIO(render_roi_preview(_png_bytes(image), (0.2, 0.2, 0.8, 0.8)))).convert("RGB")
+        cyan_pixels = sum(
+            1
+            for red, green, blue in preview.getdata()
+            if red < 40 and 130 < green < 200 and blue > 200
+        )
+
+        self.assertGreater(cyan_pixels, 50)
 
 
 if __name__ == "__main__":

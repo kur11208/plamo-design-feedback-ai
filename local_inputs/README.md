@@ -10,5 +10,6 @@ Recommended inputs:
 - No sticker sheet, instruction sheet, package, logo, or unrelated object covering the runner.
 - Minimal plastic bag glare and strong reflections.
 - Crop the image so the target runner fills most of the frame.
+- If the original photo contains extra objects, use the app's ROI controls to analyze only the target runner area.
 
 Images with stickers, printed labels, multiple mixed runners, or heavy glare can still be uploaded for local experiments, but the lightweight image heuristic may read those visual edges as false gate or thin-part candidates.
