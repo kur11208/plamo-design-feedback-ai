@@ -11,6 +11,7 @@ from image_recognizer import (
     crop_runner_image,
     render_roi_preview,
     render_runner_detection_overlay,
+    suggest_runner_roi,
 )
 
 
@@ -132,6 +133,32 @@ class ImageRecognizerTest(unittest.TestCase):
         )
 
         self.assertGreater(cyan_pixels, 50)
+
+    def test_suggest_runner_roi_selects_dense_runner_region(self) -> None:
+        image = Image.new("RGB", (320, 180), "white")
+        draw = ImageDraw.Draw(image)
+        for x in range(24, 142, 18):
+            draw.line((x, 18, x, 160), fill="black", width=3)
+        for y in range(28, 156, 22):
+            draw.line((18, y, 150, y), fill="black", width=3)
+        draw.rectangle((215, 48, 296, 126), fill=(245, 245, 245), outline="black", width=2)
+        draw.rectangle((226, 60, 250, 82), fill="red")
+        draw.line((225, 100, 286, 100), fill="black", width=2)
+
+        suggestion = suggest_runner_roi(_png_bytes(image))
+
+        left, _top, right, _bottom = suggestion["crop_box"]
+        self.assertLess(left, 0.2)
+        self.assertLess(right, 0.7)
+        self.assertGreaterEqual(suggestion["confidence"], 0.5)
+
+    def test_suggest_runner_roi_defaults_to_full_image_on_low_signal(self) -> None:
+        image = Image.new("RGB", (240, 180), "white")
+
+        suggestion = suggest_runner_roi(_png_bytes(image))
+
+        self.assertEqual(suggestion["crop_box"], (0.0, 0.0, 1.0, 1.0))
+        self.assertLessEqual(suggestion["confidence"], 0.25)
 
 
 if __name__ == "__main__":

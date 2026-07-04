@@ -27,6 +27,7 @@ from image_recognizer import (
     crop_runner_image,
     render_runner_detection_overlay,
     render_roi_preview,
+    suggest_runner_roi,
 )
 from llm_adapter import (
     DEFAULT_LOCAL_LLM_ENDPOINT,
@@ -759,17 +760,39 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
             st.success("ローカル検証モード: この画像はアプリ内表示だけに使い、レポートやGitには保存しません。")
             st.image(uploaded_image_bytes, caption="ローカル入力画像（保存しません）")
 
+            suggested_crop_box = (0.0, 0.0, 1.0, 1.0)
+            try:
+                roi_suggestion = suggest_runner_roi(uploaded_image_bytes)
+            except OSError as error:
+                st.warning(f"自動ROI候補の生成に失敗しました。画像全体を初期値にします: {error}")
+            else:
+                suggested_crop_box = roi_suggestion["crop_box"]
+                st.markdown("**自動ROI候補**")
+                roi_metric_cols = st.columns(2)
+                roi_metric_cols[0].metric("ROI信頼度", f"{roi_suggestion['confidence']:.2f}")
+                roi_metric_cols[1].metric("候補セル数", int(roi_suggestion["metrics"]["selected_cell_count"]))
+                st.caption(str(roi_suggestion["reason"]))
+                for note in roi_suggestion["quality_notes"]:
+                    if roi_suggestion["confidence"] < 0.55:
+                        st.warning(f"ROI注意: {note}")
+                    else:
+                        st.caption(f"ROIメモ: {note}")
+
             st.markdown("**解析範囲（ROI）**")
             st.caption("シール、箱、説明書、背景物を避け、評価したいランナー部分だけを指定します。")
             roi_enabled = st.checkbox("画像全体ではなく、指定範囲だけを解析する", value=True, key="runner_roi_enabled")
             if roi_enabled:
+                default_left = int(round(suggested_crop_box[0] * 100))
+                default_top = int(round(suggested_crop_box[1] * 100))
+                default_right = int(round(suggested_crop_box[2] * 100))
+                default_bottom = int(round(suggested_crop_box[3] * 100))
                 roi_cols = st.columns(2)
                 with roi_cols[0]:
-                    roi_left = st.slider("左端 (%)", min_value=0, max_value=95, value=0, step=1, key="runner_roi_left")
-                    roi_top = st.slider("上端 (%)", min_value=0, max_value=95, value=0, step=1, key="runner_roi_top")
+                    roi_left = st.slider("左端 (%)", min_value=0, max_value=95, value=min(95, default_left), step=1, key="runner_roi_left")
+                    roi_top = st.slider("上端 (%)", min_value=0, max_value=95, value=min(95, default_top), step=1, key="runner_roi_top")
                 with roi_cols[1]:
-                    roi_right = st.slider("右端 (%)", min_value=5, max_value=100, value=100, step=1, key="runner_roi_right")
-                    roi_bottom = st.slider("下端 (%)", min_value=5, max_value=100, value=100, step=1, key="runner_roi_bottom")
+                    roi_right = st.slider("右端 (%)", min_value=5, max_value=100, value=max(5, default_right), step=1, key="runner_roi_right")
+                    roi_bottom = st.slider("下端 (%)", min_value=5, max_value=100, value=max(5, default_bottom), step=1, key="runner_roi_bottom")
 
                 if roi_left >= roi_right or roi_top >= roi_bottom:
                     st.warning("ROIの上下左右が逆転しています。いったん画像全体を解析します。")

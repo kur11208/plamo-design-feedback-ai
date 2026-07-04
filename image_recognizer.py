@@ -11,6 +11,14 @@ from PIL import Image, ImageDraw
 CropBoxRatio = tuple[float, float, float, float]
 
 
+class RunnerRoiSuggestion(TypedDict):
+    crop_box: CropBoxRatio
+    confidence: float
+    reason: str
+    quality_notes: list[str]
+    metrics: dict[str, float | int]
+
+
 class RunnerImageAnalysis(TypedDict):
     part_area: str
     part_size: str
@@ -130,6 +138,72 @@ def crop_runner_image(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
     output = BytesIO()
     cropped.save(output, format="PNG")
     return output.getvalue()
+
+
+def suggest_runner_roi(image_bytes: bytes) -> RunnerRoiSuggestion:
+    """Suggest a runner-like region of interest from an uploaded image."""
+
+    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    image.thumbnail((260, 260))
+    width, height = image.size
+    pixels = list(image.getdata())
+    brightness = [_brightness(pixel) for pixel in pixels]
+    saturation = [_saturation(pixel) for pixel in pixels]
+    edge_mask = _edge_mask(brightness, width, height)
+    scores = _cell_edge_scores(edge_mask, width, height, grid_size=20)
+    saturation_scores = _cell_saturation_scores(saturation, width, height, grid_size=20)
+    active_cells = _roi_active_cells(scores)
+    components = _active_components(active_cells)
+
+    if not components:
+        return {
+            "crop_box": (0.0, 0.0, 1.0, 1.0),
+            "confidence": 0.2,
+            "reason": "ランナーらしい連続エッジ領域が弱いため、画像全体を候補にしました。",
+            "quality_notes": ["対象ランナーが小さい、背景と同化している、またはピントが甘い可能性があります。"],
+            "metrics": {"component_count": 0, "selected_cell_count": 0, "coverage_ratio": 1.0},
+        }
+
+    selected_component = max(components, key=len)
+    crop_box = _component_crop_box(selected_component, grid_size=20, margin_cells=1)
+    coverage_ratio = (crop_box[2] - crop_box[0]) * (crop_box[3] - crop_box[1])
+    selected_scores = [scores[y][x] for x, y in selected_component]
+    selected_saturation_scores = [saturation_scores[y][x] for x, y in selected_component]
+    mean_edge_score = sum(selected_scores) / max(1, len(selected_scores))
+    mean_high_saturation = sum(selected_saturation_scores) / max(1, len(selected_saturation_scores))
+
+    confidence = 0.35 + min(0.3, mean_edge_score * 2.6) + min(0.2, len(selected_component) / 60)
+    quality_notes: list[str] = []
+    if len(components) >= 3:
+        confidence -= 0.15
+        confidence = min(confidence, 0.54)
+        quality_notes.append("複数のエッジ塊があるため、箱・説明書・別ランナーが混在している可能性があります。")
+    if coverage_ratio >= 0.85:
+        confidence -= 0.12
+        confidence = min(confidence, 0.55)
+        quality_notes.append("候補範囲が画像の大部分を占めています。対象ランナーだけに寄せると精度が上がります。")
+    if mean_high_saturation >= 0.18:
+        confidence -= 0.12
+        confidence = min(confidence, 0.52)
+        quality_notes.append("候補範囲に色の強い印刷物やシールが含まれている可能性があります。")
+
+    confidence = round(max(0.2, min(0.95, confidence)), 2)
+    if not quality_notes:
+        quality_notes.append("最大の連続エッジ領域をランナー候補として提案しました。必要ならスライダーで微調整してください。")
+
+    return {
+        "crop_box": crop_box,
+        "confidence": confidence,
+        "reason": "画像内のエッジ密度が高く、連続している領域をランナー候補として抽出しました。",
+        "quality_notes": quality_notes,
+        "metrics": {
+            "component_count": len(components),
+            "selected_cell_count": len(selected_component),
+            "coverage_ratio": round(coverage_ratio, 4),
+            "mean_edge_score": round(mean_edge_score, 4),
+            "mean_high_saturation": round(mean_high_saturation, 4),
+        },
+    }
 
 
 def render_roi_preview(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
@@ -294,6 +368,79 @@ def _cell_edge_scores(edge_mask: list[bool], width: int, height: int, *, grid_si
         [counts[y][x] / max(1, totals[y][x]) for x in range(grid_size)]
         for y in range(grid_size)
     ]
+
+
+def _cell_saturation_scores(saturation: list[int], width: int, height: int, *, grid_size: int) -> list[list[float]]:
+    saturated_counts: list[list[int]] = [[0 for _ in range(grid_size)] for _ in range(grid_size)]
+    totals: list[list[int]] = [[0 for _ in range(grid_size)] for _ in range(grid_size)]
+    for y in range(height):
+        cell_y = min(grid_size - 1, int(y * grid_size / max(1, height)))
+        for x in range(width):
+            cell_x = min(grid_size - 1, int(x * grid_size / max(1, width)))
+            totals[cell_y][cell_x] += 1
+            if saturation[y * width + x] >= 80:
+                saturated_counts[cell_y][cell_x] += 1
+    return [
+        [saturated_counts[y][x] / max(1, totals[y][x]) for x in range(grid_size)]
+        for y in range(grid_size)
+    ]
+
+
+def _roi_active_cells(scores: list[list[float]]) -> list[list[bool]]:
+    grid_size = len(scores)
+    flat_scores = [score for row in scores for score in row]
+    sorted_scores = sorted(flat_scores)
+    percentile_index = int(len(sorted_scores) * 0.74)
+    threshold = max(0.028, sorted_scores[min(percentile_index, len(sorted_scores) - 1)])
+    return [
+        [scores[y][x] >= threshold for x in range(grid_size)]
+        for y in range(grid_size)
+    ]
+
+
+def _active_components(cells: list[list[bool]]) -> list[list[tuple[int, int]]]:
+    grid_size = len(cells)
+    visited = [[False for _ in range(grid_size)] for _ in range(grid_size)]
+    components: list[list[tuple[int, int]]] = []
+    for y in range(grid_size):
+        for x in range(grid_size):
+            if visited[y][x] or not cells[y][x]:
+                continue
+            component: list[tuple[int, int]] = []
+            queue: deque[tuple[int, int]] = deque([(x, y)])
+            visited[y][x] = True
+            while queue:
+                current_x, current_y = queue.popleft()
+                component.append((current_x, current_y))
+                for next_x, next_y in _neighbors(current_x, current_y, grid_size):
+                    if not visited[next_y][next_x] and cells[next_y][next_x]:
+                        visited[next_y][next_x] = True
+                        queue.append((next_x, next_y))
+            components.append(component)
+    return components
+
+
+def _component_crop_box(
+    component: list[tuple[int, int]],
+    *,
+    grid_size: int,
+    margin_cells: int,
+) -> CropBoxRatio:
+    xs = [x for x, _ in component]
+    ys = [y for _, y in component]
+    left = max(0, min(xs) - margin_cells) / grid_size
+    top = max(0, min(ys) - margin_cells) / grid_size
+    right = min(grid_size, max(xs) + margin_cells + 1) / grid_size
+    bottom = min(grid_size, max(ys) + margin_cells + 1) / grid_size
+    if right - left < 0.12:
+        center = (left + right) / 2
+        left = max(0.0, center - 0.06)
+        right = min(1.0, center + 0.06)
+    if bottom - top < 0.12:
+        center = (top + bottom) / 2
+        top = max(0.0, center - 0.06)
+        bottom = min(1.0, center + 0.06)
+    return (round(left, 3), round(top, 3), round(right, 3), round(bottom, 3))
 
 
 def _candidate_regions_from_scores(
