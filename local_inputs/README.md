@@ -4,6 +4,15 @@ Put local-only runner photos, prototype photos, or rights-managed images here wh
 
 Files in this directory are ignored by Git. Do not use this folder for public demo assets, README screenshots, or Streamlit Cloud sample data.
 
+Enable the uploader only in a Streamlit process running on your own machine:
+
+```powershell
+$env:PLAMO_ENABLE_IMAGE_UPLOAD="true"
+streamlit run app.py
+```
+
+Uploads are limited to PNG, JPEG, or WebP files up to 10 MB and 20 million pixels. The image bytes are sent to the running Streamlit process, so never enable this feature on a public server for confidential images.
+
 Recommended inputs:
 
 - A single runner or prototype part photographed from above.

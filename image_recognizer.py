@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import deque
 from io import BytesIO
 from typing import TypedDict
@@ -9,6 +10,13 @@ from typing import TypedDict
 from PIL import Image, ImageDraw
 
 CropBoxRatio = tuple[float, float, float, float]
+MAX_RUNNER_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_RUNNER_IMAGE_PIXELS = 20_000_000
+ALLOWED_RUNNER_IMAGE_FORMATS = ("JPEG", "PNG", "WEBP")
+
+
+class RunnerImageValidationError(ValueError):
+    """Raised when an uploaded image is unsafe or unsupported."""
 
 
 class RunnerRoiSuggestion(TypedDict):
@@ -39,7 +47,7 @@ def analyze_runner_image(image_bytes: bytes) -> RunnerImageAnalysis:
     It reads local image structure and returns editable suggestions for the UI.
     """
 
-    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    image = _open_runner_image(image_bytes)
     image.thumbnail((160, 160))
     width, height = image.size
     pixels = list(image.getdata())
@@ -132,7 +140,7 @@ def analysis_findings_dataframe_rows(analysis: RunnerImageAnalysis) -> list[dict
 def crop_runner_image(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
     """Return a PNG containing only the selected region of interest."""
 
-    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    image = _open_runner_image(image_bytes)
     left, top, right, bottom = _crop_box_to_pixels(crop_box, image.width, image.height)
     cropped = image.crop((left, top, right, bottom))
     output = BytesIO()
@@ -143,7 +151,7 @@ def crop_runner_image(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
 def suggest_runner_roi(image_bytes: bytes) -> RunnerRoiSuggestion:
     """Suggest a runner-like region of interest from an uploaded image."""
 
-    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    image = _open_runner_image(image_bytes)
     image.thumbnail((260, 260))
     width, height = image.size
     pixels = list(image.getdata())
@@ -209,7 +217,7 @@ def suggest_runner_roi(image_bytes: bytes) -> RunnerRoiSuggestion:
 def render_roi_preview(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
     """Return a preview image with the analysis ROI drawn on top of the original image."""
 
-    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    image = _open_runner_image(image_bytes)
     original_width, original_height = image.size
     left, top, right, bottom = _crop_box_to_pixels(crop_box, original_width, original_height)
 
@@ -246,7 +254,7 @@ def render_roi_preview(image_bytes: bytes, crop_box: CropBoxRatio) -> bytes:
 def render_runner_detection_overlay(image_bytes: bytes, analysis: RunnerImageAnalysis | None = None) -> bytes:
     """Return a PNG preview with heuristic risk-candidate boxes drawn over the image."""
 
-    image = Image.open(BytesIO(image_bytes)).convert("RGB")
+    image = _open_runner_image(image_bytes)
     preview = image.copy()
     preview.thumbnail((900, 650))
     draw = ImageDraw.Draw(preview)
@@ -261,6 +269,56 @@ def render_runner_detection_overlay(image_bytes: bytes, analysis: RunnerImageAna
     output = BytesIO()
     preview.save(output, format="PNG")
     return output.getvalue()
+
+
+def validate_runner_image(
+    image_bytes: bytes,
+    *,
+    max_bytes: int = MAX_RUNNER_IMAGE_BYTES,
+    max_pixels: int = MAX_RUNNER_IMAGE_PIXELS,
+) -> None:
+    """Reject oversized, malformed, or unsupported image uploads before analysis."""
+
+    image = _open_runner_image(image_bytes, max_bytes=max_bytes, max_pixels=max_pixels)
+    image.close()
+
+
+def _open_runner_image(
+    image_bytes: bytes,
+    *,
+    max_bytes: int = MAX_RUNNER_IMAGE_BYTES,
+    max_pixels: int = MAX_RUNNER_IMAGE_PIXELS,
+) -> Image.Image:
+    if not isinstance(image_bytes, bytes) or not image_bytes:
+        raise RunnerImageValidationError("画像データが空です。")
+    if len(image_bytes) > max_bytes:
+        raise RunnerImageValidationError(
+            f"画像ファイルは {max_bytes // (1024 * 1024)}MB 以下にしてください。"
+        )
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(
+                BytesIO(image_bytes),
+                formats=list(ALLOWED_RUNNER_IMAGE_FORMATS),
+            ) as source:
+                source_format = str(source.format or "").upper()
+                width, height = source.size
+                if source_format not in ALLOWED_RUNNER_IMAGE_FORMATS:
+                    raise RunnerImageValidationError("PNG、JPEG、WebP形式の画像だけを使用できます。")
+                if width <= 0 or height <= 0 or width * height > max_pixels:
+                    raise RunnerImageValidationError(
+                        f"画像の総画素数は {max_pixels:,} 以下にしてください。"
+                    )
+                source.load()
+                return source.convert("RGB")
+    except RunnerImageValidationError:
+        raise
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning, OSError, ValueError) as error:
+        raise RunnerImageValidationError(
+            "画像を安全に読み込めません。PNG、JPEG、WebPの正常な画像を使用してください。"
+        ) from error
 
 
 def _overlay_boxes(

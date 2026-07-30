@@ -6,12 +6,14 @@ import unittest
 from PIL import Image, ImageDraw
 
 from image_recognizer import (
+    RunnerImageValidationError,
     analysis_findings_dataframe_rows,
     analyze_runner_image,
     crop_runner_image,
     render_roi_preview,
     render_runner_detection_overlay,
     suggest_runner_roi,
+    validate_runner_image,
 )
 
 
@@ -22,6 +24,26 @@ def _png_bytes(image: Image.Image) -> bytes:
 
 
 class ImageRecognizerTest(unittest.TestCase):
+    def test_rejects_image_over_byte_limit(self) -> None:
+        image = Image.new("RGB", (20, 20), "white")
+
+        with self.assertRaisesRegex(RunnerImageValidationError, "以下"):
+            validate_runner_image(_png_bytes(image), max_bytes=8)
+
+    def test_rejects_image_over_pixel_limit(self) -> None:
+        image = Image.new("RGB", (20, 20), "white")
+
+        with self.assertRaisesRegex(RunnerImageValidationError, "総画素数"):
+            validate_runner_image(_png_bytes(image), max_pixels=100)
+
+    def test_rejects_unsupported_image_format(self) -> None:
+        image = Image.new("RGB", (20, 20), "white")
+        output = BytesIO()
+        image.save(output, format="GIF")
+
+        with self.assertRaisesRegex(RunnerImageValidationError, "安全に読み込めません"):
+            validate_runner_image(output.getvalue())
+
     def test_detects_dense_runner_like_features(self) -> None:
         image = Image.new("RGB", (240, 180), "white")
         draw = ImageDraw.Draw(image)

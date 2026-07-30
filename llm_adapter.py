@@ -16,6 +16,10 @@ DEFAULT_LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "llama3.2:3b")
 DEFAULT_LOCAL_LLM_TIMEOUT = float(os.getenv("LOCAL_LLM_TIMEOUT", "60"))
 
 
+class LocalLLMEndpointError(ValueError):
+    """Raised when an Ollama endpoint is not a fixed loopback endpoint."""
+
+
 class LocalLLMResult(TypedDict):
     ok: bool
     model: str
@@ -44,6 +48,17 @@ def generate_local_llm_analysis(
     calculation remains rule-based so the dashboard stays explainable.
     """
 
+    try:
+        safe_endpoint = validate_local_llm_endpoint(endpoint)
+    except LocalLLMEndpointError as error:
+        return {
+            "ok": False,
+            "model": model,
+            "endpoint": endpoint,
+            "content": "",
+            "error": str(error),
+        }
+
     prompt = build_local_llm_prompt(record)
     payload = {
         "model": model,
@@ -56,12 +71,12 @@ def generate_local_llm_analysis(
     }
 
     try:
-        response_data = _post_json(endpoint, payload, timeout=timeout)
+        response_data = _post_json(safe_endpoint, payload, timeout=timeout)
     except (OSError, urllib.error.URLError, TimeoutError, ValueError) as error:
         return {
             "ok": False,
             "model": model,
-            "endpoint": endpoint,
+            "endpoint": safe_endpoint,
             "content": "",
             "error": _friendly_error(error),
         }
@@ -71,7 +86,7 @@ def generate_local_llm_analysis(
         return {
             "ok": False,
             "model": model,
-            "endpoint": endpoint,
+            "endpoint": safe_endpoint,
             "content": "",
             "error": "ローカルモデルから空の応答が返りました。",
         }
@@ -79,7 +94,7 @@ def generate_local_llm_analysis(
     return {
         "ok": True,
         "model": model,
-        "endpoint": endpoint,
+        "endpoint": safe_endpoint,
         "content": content,
         "error": "",
     }
@@ -92,10 +107,14 @@ def get_local_llm_status(
 ) -> LocalLLMStatus:
     """Check whether the local Ollama server responds and list local models."""
 
-    tags_endpoint = _ollama_tags_endpoint(endpoint)
+    try:
+        tags_endpoint = _ollama_tags_endpoint(endpoint)
+    except LocalLLMEndpointError as error:
+        return {"available": False, "endpoint": endpoint, "models": [], "error": str(error)}
     request = urllib.request.Request(tags_endpoint, method="GET")
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        # _ollama_tags_endpoint restricts this URL to the fixed loopback API.
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             data = json.loads(response.read().decode("utf-8"))
     except (OSError, urllib.error.URLError, TimeoutError, ValueError) as error:
         return {"available": False, "endpoint": tags_endpoint, "models": [], "error": _friendly_error(error)}
@@ -162,7 +181,13 @@ def build_local_llm_prompt(record: Mapping[str, Any]) -> str:
 """
 
 
-def _post_json(endpoint: str, payload: Mapping[str, Any], *, timeout: float) -> dict[str, Any]:
+def _post_json(
+    endpoint: str,
+    payload: Mapping[str, Any],
+    *,
+    timeout: float,
+) -> dict[str, Any]:
+    endpoint = validate_local_llm_endpoint(endpoint)
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         endpoint,
@@ -170,14 +195,45 @@ def _post_json(endpoint: str, payload: Mapping[str, Any], *, timeout: float) -> 
         headers={"Content-Type": "application/json; charset=utf-8"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    # validate_local_llm_endpoint rejects non-HTTP and non-loopback URLs.
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
         return json.loads(response.read().decode("utf-8"))
 
 
 def _ollama_tags_endpoint(endpoint: str) -> str:
-    parsed = urllib.parse.urlsplit(endpoint)
+    parsed = urllib.parse.urlsplit(validate_local_llm_endpoint(endpoint))
     path = "/api/tags"
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def validate_local_llm_endpoint(endpoint: str) -> str:
+    """Allow only the standard Ollama API on this machine's loopback interface."""
+
+    try:
+        parsed = urllib.parse.urlsplit(endpoint)
+        port = parsed.port
+    except ValueError as error:
+        raise LocalLLMEndpointError("Ollama接続先のURLが不正です。") from error
+
+    host = (parsed.hostname or "").rstrip(".").lower()
+    is_allowed_host = host in {"localhost", "127.0.0.1", "::1"}
+
+    if (
+        parsed.scheme != "http"
+        or not is_allowed_host
+        or port != 11434
+        or parsed.path != "/api/generate"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise LocalLLMEndpointError(
+            "Ollama接続先は http://localhost:11434/api/generate のみ使用できます。"
+        )
+
+    authority = f"[{host}]:11434" if ":" in host else f"{host}:11434"
+    return urllib.parse.urlunsplit(("http", authority, "/api/generate", "", ""))
 
 
 def _format_score_breakdown(record: Mapping[str, Any]) -> str:

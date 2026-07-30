@@ -22,12 +22,15 @@ from image_based_analyzer import (
     build_image_based_findings,
 )
 from image_recognizer import (
+    MAX_RUNNER_IMAGE_BYTES,
+    RunnerImageValidationError,
     analysis_findings_dataframe_rows,
     analyze_runner_image,
     crop_runner_image,
     render_runner_detection_overlay,
     render_roi_preview,
     suggest_runner_roi,
+    validate_runner_image,
 )
 from llm_adapter import (
     DEFAULT_LOCAL_LLM_ENDPOINT,
@@ -42,6 +45,7 @@ from part_visualizer import (
 )
 from risk_scorer import explain_risk_score
 from schemas import FeedbackRecord, PartFeatures, RowAnalysisWarning
+from security_config import ENABLE_LOCAL_IMAGE_UPLOAD, ENABLE_LOCAL_LLM
 
 
 APP_TITLE = "Plamo Design Feedback AI"
@@ -51,6 +55,7 @@ OUTPUT_PATH = BASE_DIR / "outputs" / "improvement_report.md"
 IMAGE_ANALYSIS_OUTPUT_PATH = BASE_DIR / "outputs" / "image_based_analysis.md"
 LOCAL_RUNNER_EVALUATION_OUTPUT_PATH = BASE_DIR / "outputs" / "local_runner_evaluation.md"
 RUNNER_IMAGE_PATH = BASE_DIR / "assets" / "runner_sample.png"
+MAX_RUNNER_UPLOAD_MB = MAX_RUNNER_IMAGE_BYTES // (1024 * 1024)
 REQUIRED_COLUMNS = {
     "feedback_id",
     "kit_name",
@@ -735,11 +740,17 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
         "切り出し前の破損・ゲート跡・小型部品リスクを評価します。"
         "このMVPでは軽量な画像ヒューリスティックで特徴候補を自動提案し、人が確認・修正できる設計です。"
     )
-    st.info(
-        "公開デモとGitHub同梱データは架空ランナーのみを使用します。"
-        "実在商品の写真や権利処理が必要な画像で試す場合は、ローカル環境の `local_inputs/` や `private_assets/` に置き、"
-        "このアップロード欄から選択してください。これらのローカル画像はGit管理対象外です。"
-    )
+    if ENABLE_LOCAL_IMAGE_UPLOAD:
+        st.warning(
+            "画像アップロードは、このStreamlitプロセスへ画像データを送信します。"
+            "機密画像は公開サーバーへ送らず、自分のPCで起動したローカル環境だけで使用してください。"
+            "画像本体・ファイル名・元パスはレポートへ保存しません。"
+        )
+    else:
+        st.info(
+            "公開デモでは安全と権利保護のため画像アップロードを無効にしています。"
+            "架空のサンプル画像と部品特徴入力で評価フローを確認できます。"
+        )
 
     uploaded_runner_image = None
     uploaded_image_bytes = None
@@ -748,17 +759,27 @@ def render_runner_input_evaluation(records: list[FeedbackRecord]) -> None:
     image_reference = "assets/runner_sample.png"
     input_col, result_col = st.columns([0.9, 1.1])
     with input_col:
-        uploaded_runner_image = st.file_uploader(
-            "ランナー画像 / 試作写真 / 模式図を入力（公開サンプルは架空画像のみ）",
-            type=["png", "jpg", "jpeg", "webp"],
-            key="runner_image_input",
-        )
+        if ENABLE_LOCAL_IMAGE_UPLOAD:
+            uploaded_runner_image = st.file_uploader(
+                "ランナー画像 / 試作写真 / 模式図を入力",
+                type=["png", "jpg", "jpeg", "webp"],
+                key="runner_image_input",
+                max_upload_size=MAX_RUNNER_UPLOAD_MB,
+                help=f"PNG、JPEG、WebP形式、{MAX_RUNNER_UPLOAD_MB}MB以下。公開サーバーには機密画像を送信しないでください。",
+            )
         if uploaded_runner_image is not None:
             uploaded_image_bytes = uploaded_runner_image.getvalue()
+            try:
+                validate_runner_image(uploaded_image_bytes)
+            except RunnerImageValidationError as error:
+                st.error(f"画像を解析できません: {error}")
+                uploaded_runner_image = None
+
+        if uploaded_runner_image is not None:
             analysis_image_bytes = uploaded_image_bytes
             image_reference = "local_uploaded_image"
-            st.success("ローカル検証モード: この画像はアプリ内表示だけに使い、レポートやGitには保存しません。")
-            st.image(uploaded_image_bytes, caption="ローカル入力画像（保存しません）")
+            st.success("ローカル画像検証: 画像本体・ファイル名・元パスはレポートへ保存しません。")
+            st.image(uploaded_image_bytes, caption="入力画像（このセッション内で処理）")
 
             suggested_crop_box = (0.0, 0.0, 1.0, 1.0)
             try:
@@ -1241,24 +1262,30 @@ def render_local_llm_panel(record: FeedbackRecord) -> None:
             "risk_score はルールベースのまま固定し、ローカルモデルでは原因説明・改善案・検証観点だけを補強します。"
             "Ollamaが起動していない場合も、通常の分析画面はそのまま使えます。"
         )
-        config_cols = st.columns([2, 3, 1])
+        if not ENABLE_LOCAL_LLM:
+            st.info(
+                "公開デモではサーバー側からの任意通信を防ぐため、Ollama連携を無効にしています。"
+                "自分のPCで起動する場合だけ、環境変数 `PLAMO_ENABLE_LOCAL_LLM=true` で有効化できます。"
+            )
+            return
+
+        endpoint = DEFAULT_LOCAL_LLM_ENDPOINT
+        config_cols = st.columns([2, 1])
         model = config_cols[0].text_input(
             "モデル",
             value=DEFAULT_LOCAL_LLM_MODEL,
             key=f"local_llm_model_{record_key}",
         )
-        endpoint = config_cols[1].text_input(
-            "エンドポイント",
-            value=DEFAULT_LOCAL_LLM_ENDPOINT,
-            key=f"local_llm_endpoint_{record_key}",
-        )
-        timeout = config_cols[2].number_input(
+        timeout = config_cols[1].number_input(
             "timeout秒",
             min_value=5,
             max_value=120,
             value=int(DEFAULT_LOCAL_LLM_TIMEOUT),
             step=5,
             key=f"local_llm_timeout_{record_key}",
+        )
+        st.caption(
+            f"接続先: `{endpoint}`。安全のため画面からは変更できず、同一PCのOllama標準ポートだけを許可します。"
         )
 
         action_cols = st.columns([1, 1, 4])

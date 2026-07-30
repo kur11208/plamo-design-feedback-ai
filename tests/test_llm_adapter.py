@@ -5,9 +5,11 @@ import unittest
 from unittest.mock import patch
 
 from llm_adapter import (
+    LocalLLMEndpointError,
     build_local_llm_prompt,
     generate_local_llm_analysis,
     get_local_llm_status,
+    validate_local_llm_endpoint,
 )
 
 
@@ -102,6 +104,46 @@ class LocalLLMAdapterTest(unittest.TestCase):
         self.assertTrue(status["available"])
         self.assertEqual(status["models"], ["llama3.1:8b"])
         self.assertEqual(status["endpoint"], "http://localhost:11434/api/tags")
+
+    def test_rejects_non_loopback_or_nonstandard_ollama_endpoints(self) -> None:
+        endpoints = [
+            "https://example.com/api/generate",
+            "http://169.254.169.254:11434/api/generate",
+            "http://127.0.0.2:11434/api/generate",
+            "http://localhost:8080/api/generate",
+            "http://localhost:11434/other",
+            "http://localhost:11434/api/generate/",
+            "http://user@localhost:11434/api/generate",
+            "http://localhost:11434/api/generate?model=test",
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                with self.assertRaises(LocalLLMEndpointError):
+                    validate_local_llm_endpoint(endpoint)
+
+    def test_accepts_only_explicit_standard_loopback_endpoints(self) -> None:
+        endpoints = [
+            "http://localhost:11434/api/generate",
+            "http://127.0.0.1:11434/api/generate",
+            "http://[::1]:11434/api/generate",
+        ]
+
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(validate_local_llm_endpoint(endpoint), endpoint)
+
+    def test_invalid_endpoint_never_starts_network_request(self) -> None:
+        with patch("llm_adapter.urllib.request.urlopen") as mocked_urlopen:
+            result = generate_local_llm_analysis(
+                self.record,
+                endpoint="http://169.254.169.254:11434/api/generate",
+                timeout=1,
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertIn("localhost:11434", result["error"])
+        mocked_urlopen.assert_not_called()
 
 
 if __name__ == "__main__":
